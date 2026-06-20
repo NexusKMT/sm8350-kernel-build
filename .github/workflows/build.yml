@@ -115,6 +115,7 @@ jobs:
           /tmp/extract-ikconfig "${{ github.workspace }}/boot/debug-boot_a.img" > out/.config
 
           ./scripts/config --file out/.config --disable LEDS_QTI_FLASH
+          ./scripts/config --file out/.config --disable CNSS2
 
           make "${MAKE_FLAGS[@]}" olddefconfig
 
