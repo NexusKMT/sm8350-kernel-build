@@ -8,7 +8,7 @@ permissions:
 
 env:
   KERNEL_REPO: arter97-mirror/caf_msm-5.4
-  KERNEL_REF: LA.UM.10.9.1.r1
+  KERNEL_REF: kernel.lnx.5.4.1.r1-rel
   CLANG_REV: r383902
   CLANG_BRANCH: master-kernel-build-2021
 
@@ -129,24 +129,23 @@ jobs:
           )
 
           mkdir -p out
-          # CLO defconfig model: fragments assembled. vendor/lahaina_QGKI.config is a fragment;
-          # the full defconfig is built via the build.config.msm.lahaina variant system.
-          # For a first-pass core build, use the fragment directly via defconfig + olddefconfig.
-          # The actual full defconfig target: vendor/lahaina-qgki_defconfig may not exist as-is,
-          # so fall back to building the GKI base + apply the QGKI fragment.
-          if ls arch/arm64/configs/vendor/lahaina*qgki*defconfig 2>/dev/null | head -1 | grep -q .; then
-            make "${MAKE_FLAGS[@]}" vendor/lahaina-qgki_defconfig
-          else
-            # CLO uses gki_defconfig base + vendor fragment merge
-            make "${MAKE_FLAGS[@]}" gki_defconfig
-            scripts/kconfig/merge_config.sh -m -O out \
-              arch/arm64/configs/vendor/lahaina_QGKI.config \
-              arch/arm64/configs/vendor/lahaina_debug.config || true
-            make "${MAKE_FLAGS[@]}" olddefconfig
-          fi
+          # CLO defconfig assembly: use CLO's OWN generate_defconfig.sh (don't hand-roll).
+          # It sources scripts/gki/envsetup.sh which sets up CROSS_COMPILE etc,
+          # then assembles vendor/lahaina-qgki-debug_defconfig from GKI base + QGKI fragments.
+          # This is what build.config.msm.lahaina (variant qgki-debug) invokes via build.sh.
+          export REAL_CC="ccache clang"
+          export LD=ld.lld
+          export HOSTCC=clang
+          export HOSTLD=ld.lld
+          export HOSTAR=llvm-ar
+          export TARGET_BUILD_VARIANT=userdebug
+          export CROSS_COMPILE=aarch64-linux-android-
+          export CLANG_TRIPLE=aarch64-linux-gnu-
+
+          ./scripts/gki/generate_defconfig.sh vendor/lahaina-qgki-debug_defconfig
 
           echo "=== resulting .config: key flags ==="
-          grep -E '^CONFIG_(LOCALVERSION|ARCH_LAHAINA|LTO|CFI|MODVERSIONS|MODULES)=' out/.config | head
+          grep -E '^CONFIG_(LOCALVERSION|ARCH_LAHAINA|SCHED_WALT|NO_HZ_COMMON|LTO|CFI|MODVERSIONS|MODULES)=' out/.config | head
 
       - name: Build kernel + modules
         working-directory: kernel
