@@ -117,6 +117,8 @@ jobs:
           ./scripts/config --file out/.config --disable LEDS_QTI_FLASH
           ./scripts/config --file out/.config --disable CNSS2
 
+          sed -i '/#define CONFIG_SPECTRA_OPLUS/d' techpack/camera/config/lahainacameraconf.h
+
           make "${MAKE_FLAGS[@]}" olddefconfig
 
       - name: Build kernel
