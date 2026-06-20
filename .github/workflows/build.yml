@@ -108,9 +108,11 @@ jobs:
             LLVM_IAS=1
           )
 
-          make "${MAKE_FLAGS[@]}" vendor/lahaina-qgki_defconfig
-          ./scripts/config --file out/.config --disable MODVERSIONS
-          ./scripts/config --file out/.config --disable LOCALVERSION_AUTO
+          curl -sL "https://android.googlesource.com/kernel/msm/+/refs/tags/android-11.0.0_r0.31/scripts/extract-ikconfig?format=TEXT" \
+            | base64 -d > /tmp/extract-ikconfig
+          chmod +x /tmp/extract-ikconfig
+          /tmp/extract-ikconfig "${{ github.workspace }}/boot/debug-boot_a.img" > out/.config
+
           make "${MAKE_FLAGS[@]}" olddefconfig
 
       - name: Build kernel
