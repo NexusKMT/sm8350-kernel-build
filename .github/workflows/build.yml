@@ -227,12 +227,16 @@ jobs:
       - name: Re-apply AVB hash footer (official avbtool)
         run: |
           # Stock vbmeta uses Algorithm: NONE (unsigned) but carries a sha256
-          # hash descriptor. Swapping the kernel changed the hashed bytes, so we
-          # re-run add_hash_footer with the SAME partition name + salt + NONE
-          # algorithm to produce a footer the bootloader's integrity check
-          # accepts. No OEM key needed (NONE == not signed).
+          # hash descriptor over the boot image. Swapping the kernel changed
+          # the hashed bytes, so re-run add_hash_footer with the SAME partition
+          # name + salt + NONE algorithm. The bootloader verifies the hash
+          # against the descriptor's Image Size, not the full partition — so
+          # --dynamic_partition_size (footer covers exactly the new content,
+          # image grows to fit) is the correct, self-consistent choice. No OEM
+          # key needed (NONE == not signed).
           python3 "$AVBTOOL" add_hash_footer \
             --image out/boot-new.img \
+            --dynamic_partition_size \
             --partition_name boot \
             --algorithm NONE \
             --hash_algorithm sha256 \
