@@ -114,10 +114,6 @@ jobs:
             echo "This is the canonical device config — use it (via \`make olddefconfig\`) as the seed for any kernel rebuild, not a generic QRD defconfig."
           } | tee out/ikconfig_info.md
 
-      - name: Synthesize AVB verdict + build summary
-        run: |
-          bash .github/workflows/scripts/synthesize.sh
-
       - name: Upload boot payload
         uses: actions/upload-artifact@v7
         with:
