@@ -2,18 +2,39 @@ name: Parse
 
 on:
   workflow_dispatch:
+    inputs:
+      boot_file:
+        description: "Boot image filename in boot/ (leave empty to parse all)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
 
-env:
-  BOOT_RELEASE_TAG: stock-boot-template
-  BOOT_ASSET: alpha_boot_a.img
-
 jobs:
+  list-boot-images:
+    runs-on: ubuntu-22.04
+    outputs:
+      matrix: ${{ steps.list.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - id: list
+        run: |
+          if [ -n "${{ inputs.boot_file }}" ]; then
+            echo "matrix=[\"${{ inputs.boot_file }}\"]" >> "$GITHUB_OUTPUT"
+          else
+            FILES=$(find boot/ -maxdepth 1 -name '*.img' -exec basename {} \; | sort | jq -R . | jq -sc .)
+            echo "matrix=$FILES" >> "$GITHUB_OUTPUT"
+          fi
+
   parse:
+    needs: list-boot-images
     runs-on: ubuntu-22.04
     timeout-minutes: 15
+    strategy:
+      matrix:
+        boot: ${{ fromJson(needs.list-boot-images.outputs.matrix) }}
 
     steps:
       - name: Checkout harness
@@ -28,124 +49,55 @@ jobs:
         run: |
           git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg tools/mkbootimg
           git clone --depth=1 https://android.googlesource.com/platform/external/avb       tools/avb
-          echo "MKBOOTIMG=$PWD/tools/mkbootimg/mkbootimg.py"       >> "$GITHUB_ENV"
           echo "UNPACK=$PWD/tools/mkbootimg/unpack_bootimg.py"     >> "$GITHUB_ENV"
           echo "AVBTOOL=$PWD/tools/avb/avbtool.py"                 >> "$GITHUB_ENV"
 
-      - name: Download stock boot.img template
-        run: |
-          mkdir -p out
-          gh release download "$BOOT_RELEASE_TAG" \
-            -R "$GITHUB_REPOSITORY" -p "$BOOT_ASSET" -D out
-          ls -la out/
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Unpack boot.img (official unpack_bootimg)
+      - name: Unpack ${{ matrix.boot }}
         run: |
           mkdir -p out/unpacked
-          python3 "$UNPACK" --boot_img "out/$BOOT_ASSET" --format=info \
-            | tee out/boot_info.txt
-          python3 "$UNPACK" --boot_img "out/$BOOT_ASSET" --format=mkbootimg \
-            | tee out/repack_command.txt
-          python3 "$UNPACK" --boot_img "out/$BOOT_ASSET" --out out/unpacked
+          python3 "$UNPACK" --boot_img "boot/${{ matrix.boot }}" --format=info   | tee out/boot_info.txt
+          python3 "$UNPACK" --boot_img "boot/${{ matrix.boot }}" --format=mkbootimg | tee out/repack_command.txt
+          python3 "$UNPACK" --boot_img "boot/${{ matrix.boot }}" --out out/unpacked
           ls -la out/unpacked/
-          file out/unpacked/* 2>/dev/null || true
+          file out/unpacked/* 2>/dev/null
 
       - name: Inspect ramdisk
         run: |
-          rd=out/unpacked/ramdisk
-          {
-            echo "## ramdisk"
-            echo
-            echo "\`\`\`"
-            file "$rd"
-            echo "size: $(stat -c%s "$rd") bytes"
-            echo
-            echo "top-level entries (decompressed):"
-            tmp=$(mktemp -d)
-            ( cd "$tmp" && gzip -dc "$OLDPWD/$rd" 2>/dev/null | cpio -idm --quiet )
-            ls -1 "$tmp" | head -60
-            echo
-            echo "init.rc / fstab fragments:"
-            find "$tmp" -maxdepth 2 -name 'init*.rc' -o -name 'fstab*' 2>/dev/null | sort
-            echo "\`\`\`"
-            rm -rf "$tmp"
-          } | tee out/ramdisk_info.md
+          file out/unpacked/ramdisk
+          echo "size: $(stat -c%s out/unpacked/ramdisk) bytes"
 
-      - name: Probe AVB structure (official avbtool)
+      - name: Probe AVB structure
         run: |
-          python3 "$AVBTOOL" info_image \
-            --image "out/$BOOT_ASSET" --output out/avb_info.txt
+          python3 "$AVBTOOL" info_image --image "boot/${{ matrix.boot }}" --output out/avb_info.txt
           cat out/avb_info.txt
 
-      - name: Inspect stock kernel
+      - name: Inspect kernel
         run: |
-          k=out/unpacked/kernel
-          {
-            echo "## stock kernel"
-            echo
-            echo "\`\`\`"
-            file "$k"
-            echo "size: $(stat -c%s "$k") bytes"
-            echo "magic @0x00 : $(xxd -l 4 "$k" | awk '{print $2$3}')"
-            echo "magic @0x38 : $(xxd -s 56 -l 4 "$k" | awk '{print $2$3}')  (ARM64 Image = 41524d64 'ARMd')"
-            strings "$k" | grep -m3 -iE 'Linux version|5\.4\.61|qgki' || echo "(no readable version string in raw Image)"
-            echo "\`\`\`"
-          } | tee out/kernel_info.md
+          file out/unpacked/kernel
+          echo "size: $(stat -c%s out/unpacked/kernel) bytes"
+          echo "magic @0x00 : $(xxd -l 4 out/unpacked/kernel | awk '{print $2$3}')"
+          echo "magic @0x38 : $(xxd -s 56 -l 4 out/unpacked/kernel | awk '{print $2$3}')"
+          strings out/unpacked/kernel | grep -m3 -iE 'Linux version|5\.4\.61|qgki'
 
-      - name: Extract stock kernel .config (IKCONFIG)
+      - name: Extract kernel .config (IKCONFIG)
         run: |
           curl -sL "https://android.googlesource.com/kernel/msm/+/refs/tags/android-11.0.0_r0.31/scripts/extract-ikconfig?format=TEXT" \
             | base64 -d > tools/extract-ikconfig
           chmod +x tools/extract-ikconfig
-          tools/extract-ikconfig out/unpacked/kernel > out/stock-kernel-extracted.config
-          test -s out/stock-kernel-extracted.config
-          {
-            echo "## Stock kernel .config (IKCONFIG)"
-            echo
-            echo "Extracted \`${{ env.BOOT_ASSET }}\`'s embedded \`.config\` via the official \`scripts/extract-ikconfig\`:"
-            echo
-            echo "\`\`\`"
-            wc -l out/stock-kernel-extracted.config
-            grep -E '^CONFIG_(LOCALVERSION|ARCH_LAHAINA|IKCONFIG|MODULES)=' out/stock-kernel-extracted.config
-            echo "\`\`\`"
-            echo
-            echo "This is the canonical device config — use it (via \`make olddefconfig\`) as the seed for any kernel rebuild, not a generic QRD defconfig."
-          } | tee out/ikconfig_info.md
+          tools/extract-ikconfig out/unpacked/kernel > out/extracted.config
+          test -s out/extracted.config
+          echo "config lines: $(wc -l < out/extracted.config)"
+          grep -E '^CONFIG_(LOCALVERSION|ARCH_LAHAINA|IKCONFIG|MODULES|MODVERSIONS)=' out/extracted.config
 
-      - name: Upload boot payload
+      - name: Upload results
         uses: actions/upload-artifact@v7
         with:
-          name: stock-boot-payload
-          path: |
-            out/unpacked/kernel
-            out/unpacked/ramdisk
-          if-no-files-found: error
-
-      - name: Upload boot config (reconstruction command + header)
-        uses: actions/upload-artifact@v7
-        with:
-          name: stock-boot-config
+          name: parsed-${{ matrix.boot }}
           path: |
             out/boot_info.txt
             out/repack_command.txt
             out/avb_info.txt
-            out/kernel_info.md
-            out/ramdisk_info.md
-            out/ikconfig_info.md
-          if-no-files-found: error
-
-      - name: Upload full stock boot.img (for downstream repack)
-        uses: actions/upload-artifact@v7
-        with:
-          name: stock-boot-image
-          path: out/${{ env.BOOT_ASSET }}
-          if-no-files-found: error
-
-      - name: Upload stock kernel .config (IKCONFIG)
-        uses: actions/upload-artifact@v7
-        with:
-          name: stock-kernel-config
-          path: out/stock-kernel-extracted.config
+            out/extracted.config
+            out/unpacked/kernel
+            out/unpacked/ramdisk
           if-no-files-found: error
