@@ -114,11 +114,10 @@ jobs:
           chmod +x /tmp/extract-ikconfig
           /tmp/extract-ikconfig "${{ github.workspace }}/boot/debug-boot_a.img" > out/.config
 
-          ./scripts/config --file out/.config --disable LEDS_QTI_FLASH
           ./scripts/config --file out/.config --disable CNSS2
 
-          sed -i '/#define CONFIG_SPECTRA_OPLUS/d' techpack/camera/config/lahainacameraconf.h
-          sed -i '/export CONFIG_SPECTRA_OPLUS/d' techpack/camera/config/lahainacamera.conf
+          sed -i '/#include "cam_packet_util.h"/a extern int wled_flash_led_prepare(struct led_trigger *trig, int options, int *max_current);' \
+            techpack/camera/drivers/cam_sensor_module/cam_flash/cam_flash_core.c
 
           make "${MAKE_FLAGS[@]}" olddefconfig
 
