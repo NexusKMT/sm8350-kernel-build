@@ -47,7 +47,7 @@ jobs:
       - name: Mount & list modules
         run: |
           set -e
-          mkdir -p /mnt/vendor /mnt/odm
+          sudo mkdir -p /mnt/vendor /mnt/odm
           sudo mount -o loop,ro fw/vendor_a.img /mnt/vendor
           sudo mount -o loop,ro fw/odm_a.img     /mnt/odm || true
           mkdir -p out
@@ -90,7 +90,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Mount vendor + odm
         run: |
-          mkdir -p /mnt/vendor /mnt/odm
+          sudo mkdir -p /mnt/vendor /mnt/odm
           sudo mount -o loop,ro fw/vendor_a.img /mnt/vendor
           sudo mount -o loop,ro fw/odm_a.img     /mnt/odm || true
       - name: CRC analysis
@@ -121,7 +121,7 @@ jobs:
                       for i in range(size//ent):
                           e=vd[i*ent:(i+1)*ent]
                           crc=struct.unpack('<I',e[:4])[0]
-                          n=e[4:4+55].split(b'\x00')[0].decode(errors='replace')
+                          n=e[8:8+55].split(b'\x00')[0].decode(errors='replace')
                           if n: req[n]=crc
                       return req
               return {}
@@ -188,7 +188,7 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends e2fsprogs
       - name: Mount vendor
         run: |
-          mkdir -p /mnt/vendor
+          sudo mkdir -p /mnt/vendor
           sudo mount -o loop,ro fw/vendor_a.img /mnt/vendor
       - name: Extract load order + deps
         run: |
@@ -222,7 +222,7 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends kmod e2fsprogs
       - name: Mount vendor + odm
         run: |
-          mkdir -p /mnt/vendor /mnt/odm
+          sudo mkdir -p /mnt/vendor /mnt/odm
           sudo mount -o loop,ro fw/vendor_a.img /mnt/vendor
           sudo mount -o loop,ro fw/odm_a.img     /mnt/odm || true
       - name: Collect distinct vermatics
