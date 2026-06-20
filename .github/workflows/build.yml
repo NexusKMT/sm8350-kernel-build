@@ -130,15 +130,6 @@ jobs:
             LLVM=1 LLVM_IAS=1 \
             -j"$(nproc)"
 
-      - name: Verify build
-        working-directory: kernel
-        run: |
-          ls -lh out/arch/arm64/boot/Image 2>/dev/null \
-            && echo "Image built ✓" \
-            || { echo "Image MISSING ✗"; exit 1; }
-          echo "--- ccache stats ---"
-          ccache -s 2>/dev/null | grep -iE 'cache hit|cache miss|hit rate' || true
-
       - name: Upload Image (artifact)
         if: always()
         uses: actions/upload-artifact@v7
@@ -206,47 +197,9 @@ jobs:
           python3 "$AVBTOOL" info_image --image out/boot-new.img --output out/avb_new.txt
           cat out/avb_new.txt
 
-      - name: Sanity report
-        run: |
-          {
-            echo "## Repack sanity"
-            echo
-            echo '```'
-            echo "new boot.img size   : $(stat -c%s out/boot-new.img) bytes"
-            echo "new kernel (Image)  : $(stat -c%s built/Image) bytes"
-            echo "ramdisk (in-repo)   : $(stat -c%s stock/ramdisk.cpio.gz) bytes"
-            echo "header              : v$BOOT_HEADER_VERSION  os $BOOT_OS_VERSION  patch $BOOT_OS_PATCH_LEVEL  cmdline ''"
-            echo '```'
-          } | tee out/repack_sanity.md
-
       - name: Upload flashable boot.img
         uses: actions/upload-artifact@v7
         with:
           name: boot-img
           path: out/boot-new.img
           if-no-files-found: error
-
-      - name: Write repack job summary
-        uses: actions/github-script@v9
-        with:
-          script: |
-            const fs = require('fs');
-            const read = (p) => { try { return fs.readFileSync(p,'utf8'); } catch { return ''; } };
-            const md = [
-              '# Flashable `boot.img` (repacked with official tools)',
-              '',
-              'The built `Image` was dropped into the stock boot template using only',
-              '`mkbootimg` → `avbtool add_hash_footer`. No magiskboot, no WASM, no',
-              'hand-rolled repack. The stock ramdisk is reused verbatim from `stock/`.',
-              '',
-              read('out/repack_sanity.md'),
-              '',
-              '## Resulting AVB structure',
-              '',
-              '```',
-              read('out/avb_new.txt').trim(),
-              '```',
-              '',
-              'See artifact `boot-img` for the flashable image.',
-            ].join('\n');
-            await core.summary.addRaw(md).write();
