@@ -131,7 +131,7 @@ jobs:
               for line in open(f):
                   p=line.split('\t')
                   if len(p)>=4:
-                      try: ksym[p[2]]=int(p[0],16)
+                      try: ksym[p[1]]=int(p[0],16)
                       except: pass
           allreq={}
           for m in mods:
