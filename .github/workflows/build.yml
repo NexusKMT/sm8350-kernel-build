@@ -2,12 +2,6 @@ name: Build kernel
 
 on:
   workflow_dispatch:
-    inputs:
-      upload_boot_img:
-        description: "Publish a flashable boot.img to Releases (needs a stock template; off by default)"
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: read
@@ -230,22 +224,6 @@ jobs:
           name: boot-img
           path: out/boot-new.img
           if-no-files-found: error
-
-      - name: Publish to Releases (optional)
-        if: ${{ github.event.inputs.upload_boot_img == 'true' }}
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: boot-${{ github.run_number }}
-          name: "Flashable boot.img ${{ github.run_number }}"
-          body: |
-            Kernel swapped into the stock `alpha_boot_a.img` template using only
-            official AOSP tools (`mkbootimg`, `avbtool`). AVB hash footer
-            re-applied with `Algorithm: NONE` + the stock salt, so the
-            bootloader's integrity check should pass.
-
-            **Flash:** `fastboot flash boot_a boot-new.img` (A/B device — flash
-            one slot, keep the other for rollback).
-          files: out/boot-new.img
 
       - name: Write repack job summary
         uses: actions/github-script@v9
