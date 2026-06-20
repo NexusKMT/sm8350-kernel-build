@@ -190,7 +190,6 @@ jobs:
             --image out/boot-new.img \
             --partition_size "$BOOT_PARTITION_SIZE" \
             --partition_name boot \
-            --algorithm NONE \
 
       - name: Upload flashable boot.img
         uses: actions/upload-artifact@v7
