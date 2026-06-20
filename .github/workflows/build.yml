@@ -118,6 +118,7 @@ jobs:
           ./scripts/config --file out/.config --disable CNSS2
 
           sed -i '/#define CONFIG_SPECTRA_OPLUS/d' techpack/camera/config/lahainacameraconf.h
+          sed -i '/export CONFIG_SPECTRA_OPLUS/d' techpack/camera/config/lahainacamera.conf
 
           make "${MAKE_FLAGS[@]}" olddefconfig
 
