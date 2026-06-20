@@ -1,0 +1,226 @@
+name: BoardID
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Release tag holding boot/dtbo/vendor_boot images"
+        required: false
+        default: "firmware-vendor"
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - name: Download firmware assets
+        run: |
+          mkdir -p fw
+          gh release download "${{ inputs.release }}" -R "$GITHUB_REPOSITORY" -D fw -p "*.img.gz" -p "*.img" || true
+          for f in fw/*.img.gz; do [ -f "$f" ] && gunzip -f "$f"; done
+          ls -la fw/
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Stage for jobs
+        uses: actions/upload-artifact@v7
+        with:
+          name: firmware
+          path: fw/*.img
+          if-no-files-found: error
+
+  # ---- Analyze ONE boot image: fingerprint, cmdline, AVB props ----
+  analyze-boot:
+    needs: setup
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        include:
+          - { img: alpha-boot_a.img, label: alpha, note: "in repo boot/ — production" }
+          - { img: beta-boot_a.img,  label: beta,  note: "DOOM/Beta — debug" }
+    steps:
+      - name: Checkout harness
+        uses: actions/checkout@v7
+      - name: Install deps
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends python3 device-tree-compiler
+      - name: Fetch official tools
+        run: |
+          git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg tools/mkbootimg
+          git clone --depth=1 https://android.googlesource.com/platform/external/avb       tools/avb
+      - name: Resolve boot image path
+        id: path
+        run: |
+          if [ "${{ matrix.label }}" = "alpha" ]; then
+            echo "src=boot/alpha-boot_a.img" >> "$GITHUB_OUTPUT"
+          else
+            mkdir -p fwdl && gh release download "${{ inputs.release }}" -R "$GITHUB_REPOSITORY" -D fwdl -p "beta-boot_a.img.gz" && gunzip -f fwdl/*.gz
+            echo "src=fwdl/beta-boot_a.img" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Unpack boot
+        run: |
+          mkdir -p out
+          python3 tools/mkbootimg/unpack_bootimg.py --boot_img "${{ steps.path.outputs.src }}" --out out/unpacked --format=info | tee out/boot_info.txt
+          python3 tools/mkbootimg/unpack_bootimg.py --boot_img "${{ steps.path.outputs.src }}" --format=mkbootimg | tee out/repack.txt
+      - name: AVB props (fingerprint = device codename)
+        run: |
+          python3 tools/avb/avbtool.py info_image --image "${{ steps.path.outputs.src }}" --output out/avb.txt
+          echo "=== AVB props (fingerprint reveals qti/<codename>/<codename>:<ver>) ==="
+          grep -iE 'Prop|fingerprint|os_version|security_patch' out/avb.txt
+      - name: Kernel version string
+        run: |
+          strings -a out/unpacked/kernel | grep -m3 -iE 'Linux version 5\.4' | tee out/kernel_version.txt
+      - name: Ramdisk build.prop (ro.board.platform / ro.hardware — the board truth)
+        run: |
+          mkdir -p rd
+          gzip -dc out/unpacked/ramdisk 2>/dev/null | cpio -idmu -D rd 2>/dev/null || true
+          find rd -name 'build.prop' -o -name '*.prop' 2>/dev/null | head
+          {
+            echo "## ${{ matrix.label }} ramdisk props"
+            find rd -name '*.prop' 2>/dev/null -exec grep -HiE 'ro.board|ro.hardware|ro.product.(device|name)|ro.boot' {} \; | sort -u || echo "(no build.prop in boot ramdisk — check vendor/system)"
+          } | tee out/ramdisk_props.txt
+      - name: Upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: boardid-${{ matrix.label }}-boot
+          path: out/
+          if-no-files-found: error
+
+  # ---- DTBO board-overlay analysis (which boards are defined; is forza custom?) ----
+  analyze-dtbo:
+    needs: setup
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - name: Fetch firmware
+        uses: actions/download-artifact@v7
+        with: { name: firmware, path: fw }
+      - name: Install deps
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends device-tree-compiler python3
+      - name: Download dtbo
+        run: |
+          gh release download "${{ inputs.release }}" -R "$GITHUB_REPOSITORY" -D . -p "dtbo_a.img.gz" && gunzip -f dtbo_a.img.gz
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Dump DTBO board entries
+        run: |
+          mkdir -p out
+          # dtbo_a.img = DTBO header + concatenated FDT overlays. fdtdump parses it.
+          {
+            echo "## dtbo_a.img board-compatible strings"
+            echo "### All qcom,(lahaina|shima|yupik)-{mtp,qrd,idp,...} + any 'forza' entries"
+            strings -a dtbo_a.img | grep -iE 'qcom,(lahaina|shima|yupik|holi)-(mtp|qrd|idp)|forza|lenovo' | sort -u
+            echo ""
+            echo "### Top-level 'model' declarations (Qualcomm board names)"
+            strings -a dtbo_a.img | grep -iE 'Qualcomm Technologies.* (MTP|QRD|IDP)' | sort -u
+            echo ""
+            echo "### FINGERPRINT strings in dtbo"
+            strings -a dtbo_a.img | grep -iE 'qti/forza|qti/[a-z]+/[a-z]+:11' | sort -u
+            echo ""
+            echo "## CONCLUSION hints"
+            if strings -a dtbo_a.img | grep -qi 'forza'; then
+              echo "  - 'forza' string PRESENT in dtbo (may have a forza-specific overlay)"
+            else
+              echo "  - 'forza' string ABSENT from dtbo board nodes → forza is NOT a custom DT board; it reuses a reference (mtp/qrd) overlay"
+            fi
+            if strings -a dtbo_a.img | grep -qi 'qrd'; then echo "  - qrd overlays present"; fi
+            if strings -a dtbo_a.img | grep -qi 'lahaina-qrd'; then echo "  - lahaina-qrd overlay present (SM8350 QRD reference)"; fi
+          } | tee out/dtbo_boards.txt
+          # also full structured dump
+          fdtdump dtbo_a.img 2>/dev/null | grep -iE 'compatible|model' | sort -u | head -60 > out/dtbo_nodes.txt || true
+      - name: Upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: boardid-dtbo
+          path: out/
+          if-no-files-found: error
+
+  # ---- build.prop from system/vendor partition (the authoritative active board) ----
+  analyze-buildprop:
+    needs: setup
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - name: Download system_a.img.gz + vendor_a.img.gz from release
+        run: |
+          gh release download "${{ inputs.release }}" -R "$GITHUB_REPOSITORY" -D . -p "system_a.img.gz" -p "vendor_a.img.gz" || true
+          for f in *.img.gz; do [ -f "$f" ] && gunzip -f "$f"; done
+          ls -la *.img 2>/dev/null || echo "no partition images on release (upload them first)"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install deps
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends e2fsprogs
+      - name: Extract build.prop from vendor + system
+        run: |
+          mkdir -p out
+          for part in vendor system; do
+            img="${part}_a.img"
+            [ -f "$img" ] || { echo "skip $part (missing)"; continue; }
+            mnt="/mnt/$part"
+            sudo mkdir -p "$mnt"
+            sudo mount -o loop,ro "$img" "$mnt" 2>/dev/null || continue
+            {
+              echo "## build.prop from $part partition"
+              sudo find "$mnt" -name 'build.prop' 2>/dev/null -exec grep -HiE 'ro\.(board\.platform|hardware|product\.(device|name|model|brand)|boot\.(hardware|hardware\.sku|slot_suffix)|soc\.manufacturer)' {} \; | sort -u
+              echo ""
+              echo "## ro.build.fingerprint (full)"
+              sudo find "$mnt" -name 'build.prop' 2>/dev/null -exec grep -Hi 'ro.build.fingerprint' {} \; | sort -u
+            } | tee -a out/buildprop.txt
+            sudo umount "$mnt" 2>/dev/null || true
+          done
+          [ -f out/buildprop.txt ] || { echo "(no build.prop found — run without system/vendor images)" > out/buildprop.txt; }
+      - name: Upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: boardid-buildprop
+          path: out/
+          if-no-files-found: warn
+
+  # ---- Synthesize the verdict ----
+  verdict:
+    needs: [analyze-boot, analyze-dtbo, analyze-buildprop]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Gather all reports
+        uses: actions/download-artifact@v7
+        with: { name: boardid-alpha-boot, path: a }
+      - uses: actions/download-artifact@v7
+        with: { name: boardid-beta-boot, path: b }
+      - uses: actions/download-artifact@v7
+        with: { name: boardid-dtbo, path: d }
+      - uses: actions/download-artifact@v7
+        with: { name: boardid-buildprop, path: p }
+      - name: Synthesize
+        run: |
+          mkdir -p out
+          {
+            echo "# forza board identity verdict"
+            echo ""
+            echo "## ALPHA boot fingerprint"
+            grep -iE 'Prop|fingerprint' a/avb.txt 2>/dev/null | head
+            echo ""
+            echo "## BETA boot fingerprint"
+            grep -iE 'Prop|fingerprint' b/avb.txt 2>/dev/null | head
+            echo ""
+            echo "## ALPHA kernel version"
+            cat a/kernel_version.txt 2>/dev/null
+            echo "## BETA kernel version"
+            cat b/kernel_version.txt 2>/dev/null
+            echo ""
+            echo "## DTBO board overlays defined"
+            cat d/dtbo_boards.txt 2>/dev/null
+            echo ""
+            echo "## Active board from build.prop (ro.board.platform / ro.hardware)"
+            cat p/buildprop.txt 2>/dev/null | grep -iE 'ro.board.platform|ro.hardware|ro.product.device' | head
+          } | tee out/VERDICT.md
+      - name: Upload verdict
+        uses: actions/upload-artifact@v7
+        with:
+          name: boardid-verdict
+          path: out/VERDICT.md
+          if-no-files-found: error
