@@ -122,7 +122,6 @@ jobs:
             out/unpacked/kernel
             out/unpacked/ramdisk
           if-no-files-found: error
-          archive: false
 
       - name: Upload boot config (reconstruction command + header)
         uses: actions/upload-artifact@v7
@@ -136,7 +135,6 @@ jobs:
             out/ramdisk_info.md
             out/ikconfig_info.md
           if-no-files-found: error
-          archive: false
 
       - name: Upload full stock boot.img (for downstream repack)
         uses: actions/upload-artifact@v7
@@ -144,7 +142,6 @@ jobs:
           name: stock-boot-image
           path: out/${{ env.BOOT_ASSET }}
           if-no-files-found: error
-          archive: false
 
       - name: Upload stock kernel .config (IKCONFIG)
         uses: actions/upload-artifact@v7
@@ -152,4 +149,3 @@ jobs:
           name: stock-kernel-config
           path: out/stock-kernel-extracted.config
           if-no-files-found: error
-          archive: false
