@@ -1,8 +1,5 @@
 name: Build kernel
 
-# Lean harness: checks out upstream LineageOS OnePlus SM8350 (lahaina / msm-5.4)
-# kernel at lineage-18.1 and builds the vendor/lahaina-qgki_defconfig, using the
-# toolchain the source itself declares (clang-r383902) with ccache.
 on:
   workflow_dispatch:
     inputs:
@@ -26,9 +23,6 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 120
     env:
-      # ccache-determinism: pin the build timestamp so the version string baked
-      # into compile.h is stable across runs. Without this ccache hit rate is
-      # ~1% (every object churns). Measured: raises hot-run hits to ~79%.
       KBUILD_BUILD_TIMESTAMP: '@1616113200'
 
     steps:
@@ -40,7 +34,7 @@ jobs:
           haskell: true
           large-packages: true
           docker-images: true
-          tool-cache: false   # keep: actions/cache (toolchains + ccache) needs it
+          tool-cache: false
           swap-storage: true
 
       - name: Checkout harness
@@ -121,10 +115,6 @@ jobs:
           )
 
           make "${MAKE_FLAGS[@]}" vendor/lahaina-qgki_defconfig
-
-          # 5.4 predates CONFIG_MODULE_REL_CRCS; under LLD 11 modpost emits
-          # __crc_* as R_AARCH64_ABS32 which LLD rejects at vmlinux link. All
-          # drivers build builtin, so disable MODVERSIONS (no external .ko).
           ./scripts/config --file out/.config --disable MODVERSIONS
           ./scripts/config --file out/.config --disable LOCALVERSION_AUTO
           make "${MAKE_FLAGS[@]}" olddefconfig
@@ -164,16 +154,6 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-  # ── Repack the freshly built Image into a flashable, AVB-valid boot.img ───
-  # Uses ONLY official AOSP tools: mkbootimg (to package), avbtool (to re-apply
-  # the hash footer so the bootloader's integrity check passes after the kernel
-  # swap). No magiskboot, no hand-rolled repack.
-  #
-  # Inputs pinned in-repo (extracted once via parse-boot's official tools, see
-  # stock/RAMDISK_ORIGIN.md):
-  #   stock/ramdisk.cpio.gz  — stock boot ramdisk, reused verbatim (kernel-only swap)
-  #   boot header params     — header_version 3, os 11.0.0, patch 2020-10, empty cmdline
-  #   AVB salt               — stock's salt, so the footer matches the device's scheme
   repack:
     needs: build
     if: ${{ success() }}
@@ -181,11 +161,9 @@ jobs:
     timeout-minutes: 10
 
     env:
-      # Stock boot header parameters (from unpack_bootimg --format=info)
       BOOT_HEADER_VERSION: "3"
       BOOT_OS_VERSION: "11.0.0"
       BOOT_OS_PATCH_LEVEL: "2020-10"
-      # Stock AVB scheme (from avbtool info_image): NONE algorithm + this salt
       AVB_SALT: "884ddade7c249ddee8f6a5b05eeb04c6db23c08d9966acf0adfbaceacae173be"
 
     steps:
@@ -211,9 +189,6 @@ jobs:
       - name: Package boot.img (official mkbootimg)
         run: |
           mkdir -p out
-          # Swap our built Image into the stock header. The stock ramdisk lives
-          # in-repo (stock/ramdisk.cpio.gz) and is reused verbatim — only the
-          # kernel changes. Parameters are the stock boot header's own values.
           python3 "$MKBOOTIMG" \
             --header_version "$BOOT_HEADER_VERSION" \
             --os_version "$BOOT_OS_VERSION" \
@@ -226,14 +201,6 @@ jobs:
 
       - name: Re-apply AVB hash footer (official avbtool)
         run: |
-          # Stock vbmeta uses Algorithm: NONE (unsigned) but carries a sha256
-          # hash descriptor over the boot image. Swapping the kernel changed
-          # the hashed bytes, so re-run add_hash_footer with the SAME partition
-          # name + salt + NONE algorithm. The bootloader verifies the hash
-          # against the descriptor's Image Size, not the full partition — so
-          # --dynamic_partition_size (footer covers exactly the new content,
-          # image grows to fit) is the correct, self-consistent choice. No OEM
-          # key needed (NONE == not signed).
           python3 "$AVBTOOL" add_hash_footer \
             --image out/boot-new.img \
             --dynamic_partition_size \
@@ -304,4 +271,3 @@ jobs:
               'See artifact `boot-img` for the flashable image.',
             ].join('\n');
             await core.summary.addRaw(md).write();
-
