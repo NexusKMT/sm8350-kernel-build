@@ -114,6 +114,8 @@ jobs:
           chmod +x /tmp/extract-ikconfig
           /tmp/extract-ikconfig "${{ github.workspace }}/boot/debug-boot_a.img" > out/.config
 
+          ./scripts/config --file out/.config --disable LEDS_QTI_FLASH
+
           make "${MAKE_FLAGS[@]}" olddefconfig
 
       - name: Build kernel
