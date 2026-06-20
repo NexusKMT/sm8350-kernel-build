@@ -191,7 +191,6 @@ jobs:
             --partition_size "$BOOT_PARTITION_SIZE" \
             --partition_name boot \
             --algorithm NONE \
-            --hash_algorithm sha256
 
       - name: Upload flashable boot.img
         uses: actions/upload-artifact@v7
