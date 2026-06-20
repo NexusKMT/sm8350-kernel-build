@@ -147,6 +147,14 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+      - name: Upload Module.symvers (for CRC analysis)
+        uses: actions/upload-artifact@v7
+        with:
+          name: kernel-Module.symvers
+          path: kernel/out/Module.symvers
+          if-no-files-found: error
+          retention-days: 30
+
   repack:
     needs: build
     if: ${{ success() }}
