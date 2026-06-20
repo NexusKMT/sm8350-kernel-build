@@ -10,9 +10,10 @@ name: Parse stock boot.img
 # AVB structure). Later build/repack steps reference these artifacts instead of
 # anyone's memory.
 #
-# Tools (all from Android Open Source Project, cloned verbatim):
-#   - mkbootimg  : platform/system/tools/mkbootimg (unpack_bootimg.py / mkbootimg.py)
-#   - avb        : platform/external/avb (avbtool.py)
+# Tools (all from Android Open Source Project, fetched verbatim):
+#   - mkbootimg     : platform/system/tools/mkbootimg (unpack_bootimg.py / mkbootimg.py)
+#   - avb           : platform/external/avb (avbtool.py)
+#   - extract-ikconfig : Linux kernel scripts/extract-ikconfig (from AOSP kernel/msm, android-11 tag)
 
 on:
   workflow_dispatch:
@@ -118,6 +119,33 @@ jobs:
             echo "\`\`\`"
           } | tee out/kernel_info.md
 
+      # ── Extract embedded kernel .config (IKCONFIG) ──────────────────────────
+      # CONFIG_IKCONFIG=y bakes a gzip'd .config between IKCFG_ST..IKCFG_ED.
+      # Uses the OFFICIAL upstream script from the Linux kernel tree
+      # (scripts/extract-ikconfig, fetched verbatim from AOSP's kernel/msm at
+      # the android-11 tag — matches this 5.4.61-qgki kernel's lineage). It is
+      # pure POSIX sh + tr/grep/zcat, no source tree needed. Fails the step if
+      # the stock kernel was built without IKCONFIG.
+      - name: Extract stock kernel .config (IKCONFIG)
+        run: |
+          curl -sL "https://android.googlesource.com/kernel/msm/+/refs/tags/android-11.0.0_r0.31/scripts/extract-ikconfig?format=TEXT" \
+            | base64 -d > tools/extract-ikconfig
+          chmod +x tools/extract-ikconfig
+          tools/extract-ikconfig out/unpacked/kernel > out/stock-kernel-extracted.config
+          test -s out/stock-kernel-extracted.config   # abort if IKCONFIG absent
+          {
+            echo "## Stock kernel .config (IKCONFIG)"
+            echo
+            echo "Extracted \`${{ env.BOOT_ASSET }}\`'s embedded \`.config\` via the official \`scripts/extract-ikconfig\`:"
+            echo
+            echo "\`\`\`"
+            wc -l out/stock-kernel-extracted.config
+            grep -E '^CONFIG_(LOCALVERSION|ARCH_LAHAINA|IKCONFIG|MODULES)=' out/stock-kernel-extracted.config
+            echo "\`\`\`"
+            echo
+            echo "This is the canonical device config — use it (via \`make olddefconfig\`) as the seed for any kernel rebuild, not a generic QRD defconfig."
+          } | tee out/ikconfig_info.md
+
       # ── Synthesize the authoritative verdict on the brick hypothesis ────────
       - name: Synthesize AVB verdict + build summary
         run: |
@@ -143,6 +171,7 @@ jobs:
             out/avb_info.txt
             out/kernel_info.md
             out/ramdisk_info.md
+            out/ikconfig_info.md
           if-no-files-found: error
 
       - name: Upload full stock boot.img (for downstream repack)
@@ -150,6 +179,13 @@ jobs:
         with:
           name: stock-boot-image
           path: out/${{ env.BOOT_ASSET }}
+          if-no-files-found: error
+
+      - name: Upload stock kernel .config (IKCONFIG)
+        uses: actions/upload-artifact@v7
+        with:
+          name: stock-kernel-config
+          path: out/stock-kernel-extracted.config
           if-no-files-found: error
 
       - name: Write job summary
