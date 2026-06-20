@@ -1,4 +1,4 @@
-name: Parse stock boot.img
+name: Parse
 
 on:
   workflow_dispatch:
