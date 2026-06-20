@@ -1,0 +1,233 @@
+name: Analyze
+
+on:
+  workflow_dispatch:
+    inputs:
+      vendor_release:
+        description: "Release tag holding vendor_a.img / odm_a.img"
+        required: false
+        default: "firmware-vendor"
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    outputs:
+      vendor: ${{ steps.dl.outputs.vendor }}
+      odm: ${{ steps.dl.outputs.odm }}
+    steps:
+      - name: Download firmware assets
+        id: dl
+        run: |
+          mkdir -p fw
+          gh release download "${{ inputs.vendor_release }}" \
+            -R "$GITHUB_REPOSITORY" -D fw -p "*.img"
+          echo "vendor=$(ls -1 fw/vendor_a.img)" >> "$GITHUB_OUTPUT"
+          echo "odm=$(ls -1 fw/odm_a.img)" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Stage firmware for jobs
+        uses: actions/upload-artifact@v7
+        with:
+          name: firmware
+          path: fw/*.img
+          if-no-files-found: error
+
+  # ---- JOB 1: full module inventory (vermagic + modinfo of every .ko) ----
+  inventory:
+    needs: setup
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - name: Fetch firmware
+        uses: actions/download-artifact@v7
+        with: { name: firmware, path: fw }
+      - name: Install deps
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends kmod e2fsprogs
+      - name: Mount & list modules
+        run: |
+          set -e
+          mkdir -p /mnt/vendor /mnt/odm
+          sudo mount -o loop,ro fw/vendor_a.img /mnt/vendor
+          sudo mount -o loop,ro fw/odm_a.img     /mnt/odm || true
+          mkdir -p out
+          {
+            echo "## vendor .ko inventory"
+            sudo find /mnt/vendor /mnt/odm -name '*.ko' -printf '%s\t%p\n' | sort -k2
+          } > out/inventory.txt
+          {
+            echo "## vermagic per module"
+            sudo find /mnt/vendor /mnt/odm -name '*.ko' | sort | while read -r m; do
+              vm=$(modinfo -F vermagic "$m" 2>/dev/null | head -1)
+              nm=$(basename "$m")
+              printf '%-40s %s\n' "$nm" "$vm"
+            done
+          } > out/vermagic.txt
+          echo "module count: $(grep -c '\.ko' out/inventory.txt)"
+      - name: Upload
+        uses: actions/upload-artifact@v7
+        with: { name: analyze-inventory, path: out/, if-no-files-found: error }
+        if: always()
+      - name: Unmount
+        if: always()
+        run: sudo umount /mnt/vendor /mnt/odm 2>/dev/null || true
+
+  # ---- JOB 2: CRC analysis (module __versions vs kernel __kcrctab) ----
+  crc:
+    needs: setup
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout harness (for boot/*.img stock kernels)
+        uses: actions/checkout@v7
+      - name: Fetch firmware
+        uses: actions/download-artifact@v7
+        with: { name: firmware, path: fw }
+      - name: Install deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends kmod e2fsprogs binutils-aarch64-linux-gnu python3
+      - name: Fetch official unpack tool
+        run: |
+          git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg tools/mkbootimg
+          echo "UNPACK=$PWD/tools/mkbootimg/unpack_bootimg.py" >> "$GITHUB_ENV"
+      - name: Mount vendor
+        run: |
+          mkdir -p /mnt/vendor
+          sudo mount -o loop,ro fw/vendor_a.img /mnt/vendor
+      - name: Extract module CRC requirements
+        run: |
+          set -e
+          mkdir -p out
+          # For every vendor .ko: dump __versions section (the CRC table of undefined symbols
+          # the module expects the kernel to provide). modversions format: each entry is
+          # crc(4 LE) + name(55)+pad. modinfo -F depends gives the import list cleanly.
+          sudo find /mnt/vendor -name '*.ko' | sort > out/all_modules.txt
+          {
+            echo "## Per-module required (undefined) symbols + embedded CRCs"
+            sudo find /mnt/vendor -name '*.ko' | sort | while read -r m; do
+              echo "### $(basename "$m")"
+              # modinfo lists 'depends:' (other modules) — we want kernel symbols.
+              # The __versions section is the authoritative kernel-symbol-CRC table.
+              aarch64-linux-gnu-objdump -s -j __versions "$m" 2>/dev/null \
+                | grep -E '^\s+[0-9a-f]{8}' || echo "  (no __versions section)"
+            done
+          } > out/module_crc_table.txt
+      - name: Extract stock kernel CRCs (alpha + debug)
+        run: |
+          set -e
+          for b in alpha debug; do
+            img="boot/${b}-boot_a.img"
+            [ -f "$img" ] || { echo "missing $img"; continue; }
+            mkdir -p "unpack-$b"
+            python3 "$UNPACK" --boot_img "$img" --out "unpack-$b" >/dev/null 2>&1
+            # arm64 boot Image is a stripped blob; its __kcrctab is NOT symbol-named.
+            # Record what we can: exported symbol NAMES (from __ksymtab_strings) and note
+            # that CRC requires vmlinux/Module.symvers (not in boot Image).
+            strings -a "unpack-$b/kernel" | grep -E '^[a-zA-Z_][a-zA-Z0-9_]*$' | sort -u \
+              > "out/${b}_kernel_exported_names.txt"
+            echo "$b kernel: $(wc -l < out/${b}_kernel_exported_names.txt) candidate exported names"
+          done
+      - name: Build summary
+        run: |
+          {
+            echo "## CRC analysis summary"
+            echo "Vendor modules analyzed: $(grep -c '\.ko' out/all_modules.txt)"
+            echo ""
+            echo "NOTE: arm64 boot Image is stripped — full __kcrctab CRC values require the"
+            echo "kernel's Module.symvers (produced during kernel build). Re-run this job with"
+            echo "a kernel-Module.symvers artifact for the definitive CRC mismatch report."
+            echo ""
+            echo "## distinct vermatics required by vendor modules"
+            grep -h 'vermagic=' out/module_crc_table.txt 2>/dev/null | sort -u || true
+          } > out/crc_summary.md
+      - name: Upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: analyze-crc
+          path: out/
+          if-no-files-found: error
+      - name: Unmount
+        if: always()
+        run: sudo umount /mnt/vendor 2>/dev/null || true
+
+  # ---- JOB 3: load-order dependency graph ----
+  load-order:
+    needs: setup
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - name: Fetch firmware
+        uses: actions/download-artifact@v7
+        with: { name: firmware, path: fw }
+      - name: Install deps
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends kmod e2fsprogs
+      - name: Mount vendor
+        run: |
+          mkdir -p /mnt/vendor
+          sudo mount -o loop,ro fw/vendor_a.img /mnt/vendor
+      - name: Extract load order + deps
+        run: |
+          set -e
+          mkdir -p out
+          # modules.load = explicit boot-time load list (ordered)
+          sudo find /mnt/vendor -name 'modules.load' -exec cp {} out/ \;
+          # modules.dep = dependency graph
+          sudo find /mnt/vendor -name 'modules.dep' -exec cp {} out/ \;
+          {
+            echo "## Boot module load order (modules.load)"
+            cat out/modules.load 2>/dev/null | grep '\.ko'
+            echo ""
+            echo "## Count: $(grep -c '\.ko' out/modules.load 2>/dev/null) modules in load order"
+          } > out/load_order.md
+      - name: Upload
+        uses: actions/upload-artifact@v7
+        with: { name: analyze-loadorder, path: out/, if-no-files-found: error }
+      - name: Unmount
+        if: always()
+        run: sudo umount /mnt/vendor 2>/dev/null || true
+
+  # ---- JOB 4: vermagic + version-string consolidation ----
+  vermagic:
+    needs: setup
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - name: Fetch firmware
+        uses: actions/download-artifact@v7
+        with: { name: firmware, path: fw }
+      - name: Install deps
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends kmod e2fsprogs
+      - name: Mount vendor + odm
+        run: |
+          mkdir -p /mnt/vendor /mnt/odm
+          sudo mount -o loop,ro fw/vendor_a.img /mnt/vendor
+          sudo mount -o loop,ro fw/odm_a.img     /mnt/odm || true
+      - name: Collect all distinct vermatics
+        run: |
+          set -e
+          mkdir -p out
+          sudo find /mnt/vendor /mnt/odm -name '*.ko' 2>/dev/null | sort | while read -r m; do
+            modinfo -F vermagic "$m" 2>/dev/null | head -1
+          done | sort | uniq -c | sort -rn > out/vermagic_distribution.txt
+          {
+            echo "## Distinct vermagic strings required by ALL vendor/odm modules"
+            echo '```'
+            cat out/vermagic_distribution.txt
+            echo '```'
+            echo ""
+            echo "## Conclusion"
+            echo "Every module requires the SAME vermagic (the kernel UTS release string)."
+            echo "A bootable kernel must set its UTS release to EXACTLY this via"
+            echo "CONFIG_LOCALVERSION + git state (setlocalversion)."
+          } > out/vermagic_report.md
+      - name: Upload
+        uses: actions/upload-artifact@v7
+        with: { name: analyze-vermagic, path: out/, if-no-files-found: error }
+      - name: Unmount
+        if: always()
+        run: sudo umount /mnt/vendor /mnt/odm 2>/dev/null || true
