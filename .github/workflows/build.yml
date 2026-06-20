@@ -151,7 +151,6 @@ jobs:
       BOOT_OS_VERSION: "11.0.0"
       BOOT_OS_PATCH_LEVEL: "2020-10"
       BOOT_PARTITION_SIZE: "100663296"
-      AVB_SALT: "884ddade7c249ddee8f6a5b05eeb04c6db23c08d9966acf0adfbaceacae173be"
 
     steps:
       - name: Checkout harness
@@ -186,17 +185,14 @@ jobs:
             -o out/boot-new.img
           ls -lh out/boot-new.img
 
-      - name: Re-apply AVB hash footer (official avbtool)
+      - name: Pad boot.img to partition size (official avbtool)
         run: |
           python3 "$AVBTOOL" add_hash_footer \
             --image out/boot-new.img \
             --partition_size "$BOOT_PARTITION_SIZE" \
             --partition_name boot \
             --algorithm NONE \
-            --hash_algorithm sha256 \
-            --salt "$AVB_SALT"
-          python3 "$AVBTOOL" info_image --image out/boot-new.img --output out/avb_new.txt
-          cat out/avb_new.txt
+            --hash_algorithm sha256
 
       - name: Upload flashable boot.img
         uses: actions/upload-artifact@v7
