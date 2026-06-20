@@ -158,6 +158,7 @@ jobs:
       BOOT_HEADER_VERSION: "3"
       BOOT_OS_VERSION: "11.0.0"
       BOOT_OS_PATCH_LEVEL: "2020-10"
+      BOOT_PARTITION_SIZE: "100663296"
       AVB_SALT: "884ddade7c249ddee8f6a5b05eeb04c6db23c08d9966acf0adfbaceacae173be"
 
     steps:
@@ -197,7 +198,7 @@ jobs:
         run: |
           python3 "$AVBTOOL" add_hash_footer \
             --image out/boot-new.img \
-            --dynamic_partition_size \
+            --partition_size "$BOOT_PARTITION_SIZE" \
             --partition_name boot \
             --algorithm NONE \
             --hash_algorithm sha256 \
