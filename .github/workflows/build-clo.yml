@@ -129,24 +129,32 @@ jobs:
           )
 
           mkdir -p out
-          # CLO defconfig assembly: generate_defconfig.sh merges fragments and writes
-          # arch/arm64/configs/vendor/lahaina-qgki-debug_defconfig (then DELETES .config).
-          # So step 1: run it to create the defconfig file. step 2: make <that> to populate out/.config.
-          export REAL_CC="ccache clang"
-          export LD=ld.lld
-          export HOSTCC=clang
-          export HOSTLD=ld.lld
-          export HOSTAR=llvm-ar
-          export TARGET_BUILD_VARIANT=userdebug
-          export CROSS_COMPILE=aarch64-linux-android-
-          export CLANG_TRIPLE=aarch64-linux-gnu-
+          # Reproduce generate_defconfig.sh's blend manually under O=out.
+          # Blend (from generate_defconfig, qgki-debug variant) applied in this override order:
+          #   gki_defconfig (base) -> lahaina_ALLYES_GKI -> lahaina_QGKI -> lahaina_consolidate -> lahaina_debug
+          # The ALLYES step forces GKI symbols to y so QGKI/debug can override.
+          VENDOR=arch/arm64/configs/vendor
 
-          # Step 1: create the vendor/lahaina-qgki-debug_defconfig file from fragments
-          ./scripts/gki/generate_defconfig.sh vendor/lahaina-qgki-debug_defconfig
-          ls -la arch/arm64/configs/vendor/lahaina-qgki-debug_defconfig
+          # Step 1: base config
+          make "${MAKE_FLAGS[@]}" gki_defconfig
 
-          # Step 2: populate out/.config from the generated defconfig
-          make "${MAKE_FLAGS[@]}" vendor/lahaina-qgki-debug_defconfig
+          # Step 2: build the ALLYES_GKI fragment (forces GKI fragment symbols to y)
+          # fragment_allyesconfig.sh takes the GKI fragment and emits an allyes version
+          if [ -f "$VENDOR/lahaina_GKI.config" ]; then
+            ./scripts/gki/fragment_allyesconfig.sh "$VENDOR/lahaina_GKI.config" "$VENDOR/lahaina_ALLYES_GKI.config" || true
+          fi
+
+          # Step 3: merge fragments in order (later overrides earlier) into out/.config
+          FRAGS=""
+          for f in "$VENDOR/lahaina_ALLYES_GKI.config" "$VENDOR/lahaina_QGKI.config" \
+                   "$VENDOR/lahaina_consolidate.config" "$VENDOR/lahaina_debug.config"; do
+            [ -f "$f" ] && FRAGS="$FRAGS $f"
+          done
+          echo "merging fragments:$FRAGS"
+          scripts/kconfig/merge_config.sh -m -O out $FRAGS
+
+          # Step 4: settle
+          make "${MAKE_FLAGS[@]}" olddefconfig
 
           echo "=== resulting .config: key flags ==="
           grep -E '^CONFIG_(LOCALVERSION|ARCH_LAHAINA|SCHED_WALT|NO_HZ_COMMON|LTO|CFI|MODVERSIONS|MODULES)=' out/.config | head
