@@ -129,10 +129,9 @@ jobs:
           )
 
           mkdir -p out
-          # CLO defconfig assembly: use CLO's OWN generate_defconfig.sh (don't hand-roll).
-          # It sources scripts/gki/envsetup.sh which sets up CROSS_COMPILE etc,
-          # then assembles vendor/lahaina-qgki-debug_defconfig from GKI base + QGKI fragments.
-          # This is what build.config.msm.lahaina (variant qgki-debug) invokes via build.sh.
+          # CLO defconfig assembly: generate_defconfig.sh merges fragments and writes
+          # arch/arm64/configs/vendor/lahaina-qgki-debug_defconfig (then DELETES .config).
+          # So step 1: run it to create the defconfig file. step 2: make <that> to populate out/.config.
           export REAL_CC="ccache clang"
           export LD=ld.lld
           export HOSTCC=clang
@@ -142,7 +141,12 @@ jobs:
           export CROSS_COMPILE=aarch64-linux-android-
           export CLANG_TRIPLE=aarch64-linux-gnu-
 
+          # Step 1: create the vendor/lahaina-qgki-debug_defconfig file from fragments
           ./scripts/gki/generate_defconfig.sh vendor/lahaina-qgki-debug_defconfig
+          ls -la arch/arm64/configs/vendor/lahaina-qgki-debug_defconfig
+
+          # Step 2: populate out/.config from the generated defconfig
+          make "${MAKE_FLAGS[@]}" vendor/lahaina-qgki-debug_defconfig
 
           echo "=== resulting .config: key flags ==="
           grep -E '^CONFIG_(LOCALVERSION|ARCH_LAHAINA|SCHED_WALT|NO_HZ_COMMON|LTO|CFI|MODVERSIONS|MODULES)=' out/.config | head
