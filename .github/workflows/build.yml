@@ -137,7 +137,6 @@ jobs:
           name: kernel-Image
           path: kernel/out/arch/arm64/boot/Image
           if-no-files-found: warn
-          archive: false
           retention-days: 7
 
   repack:
@@ -200,4 +199,3 @@ jobs:
           name: boot-img
           path: out/boot-new.img
           if-no-files-found: error
-          archive: false
