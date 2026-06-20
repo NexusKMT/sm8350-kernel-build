@@ -108,6 +108,7 @@ jobs:
             LLVM_IAS=1
           )
 
+          mkdir -p out
           curl -sL "https://android.googlesource.com/kernel/msm/+/refs/tags/android-11.0.0_r0.31/scripts/extract-ikconfig?format=TEXT" \
             | base64 -d > /tmp/extract-ikconfig
           chmod +x /tmp/extract-ikconfig
