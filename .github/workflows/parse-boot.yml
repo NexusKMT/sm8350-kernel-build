@@ -16,10 +16,6 @@ name: Parse stock boot.img
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/parse-boot.yml'
 
 permissions:
   contents: read
@@ -35,7 +31,7 @@ jobs:
 
     steps:
       - name: Checkout harness
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install deps
         run: |
@@ -129,7 +125,7 @@ jobs:
 
       # ── Artifacts: each a distinct, reusable asset ─────────────────────────
       - name: Upload boot payload
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: stock-boot-payload
           path: |
@@ -138,7 +134,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload boot config (reconstruction command + header)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: stock-boot-config
           path: |
@@ -150,14 +146,14 @@ jobs:
           if-no-files-found: error
 
       - name: Upload full stock boot.img (for downstream repack)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: stock-boot-image
           path: out/${{ env.BOOT_ASSET }}
           if-no-files-found: error
 
       - name: Write job summary
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
