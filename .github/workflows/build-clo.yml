@@ -123,6 +123,7 @@ jobs:
           BUILD_CONFIG=kernel/msm-5.4/build.config.msm.lahaina \
           KERNEL_DIR=kernel/msm-5.4 \
           VARIANT=qgki-debug \
+          MAKE_GOALS="Image modules dtbs" \
           CC="ccache clang" \
           build/build.sh
 
