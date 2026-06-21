@@ -65,8 +65,13 @@ jobs:
 
       - name: Mount stock vendor.img and inventory its modules
         run: |
+          file stock/vendor_a.img
           sudo mkdir -p /mnt/vendor
-          sudo mount -o loop stock/vendor_a.img /mnt/vendor
+          sudo mount -o loop stock/vendor_a.img /mnt/vendor || {
+            echo "mount failed, trying simg2img first..."
+            simg2img stock/vendor_a.img stock/vendor_raw.img
+            sudo mount -o loop stock/vendor_raw.img /mnt/vendor
+          }
           sudo find /mnt/vendor -name '*.ko' -printf '%p\n' | sort > stock/stock-ko-paths.txt
           STOCK_KO_COUNT=$(wc -l < stock/stock-ko-paths.txt)
           echo "stock vendor .ko count: $STOCK_KO_COUNT"
