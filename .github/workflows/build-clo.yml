@@ -54,6 +54,29 @@ jobs:
           grep -c 'function append_cmd' build/_setup_env.sh
           ls prebuilts/build-tools/linux-x86/bin/bison prebuilts/build-tools/common/bison 2>/dev/null | head
 
+      - name: Fetch techpack components (CLO @ LA.UM.10.9.1.r1)
+        run: |
+          cd "$GITHUB_WORKSPACE/kernel/msm-5.4/techpack"
+          CLO=https://git.codelinaro.org/clo/la/platform/vendor/opensource
+          git clone --depth=1 -b "$KERNEL_REF" "$CLO/audio-kernel.git"   audio
+          git clone --depth=1 -b "$KERNEL_REF" "$CLO/display-drivers.git" display
+          git clone --depth=1 -b "$KERNEL_REF" "$CLO/video-driver.git"   video
+          git clone --depth=1 -b "$KERNEL_REF" "$CLO/dataipa.git"        dataipa
+          git clone --depth=1 -b "$KERNEL_REF" "$CLO/camera-kernel.git"  camera
+          ls
+
+      - name: Fetch lahaina DTBs (from Motorola SM8350 tree)
+        run: |
+          cd "$GITHUB_WORKSPACE/kernel/msm-5.4/arch/arm64/boot/dts"
+          mkdir -p vendor/qcom
+          cd vendor/qcom
+          git clone --depth=1 --filter=blob:none --sparse https://github.com/schqiushui/android_kernel_motorola_sm8350.git /tmp/moto
+          cd /tmp/moto
+          git sparse-checkout set arch/arm64/boot/dts/vendor/qcom
+          git checkout
+          cp -r arch/arm64/boot/dts/vendor/qcom/lahaina-* "$GITHUB_WORKSPACE/kernel/msm-5.4/arch/arm64/boot/dts/vendor/qcom/"
+          ls "$GITHUB_WORKSPACE/kernel/msm-5.4/arch/arm64/boot/dts/vendor/qcom/" | grep lahaina-qrd | head
+
       - name: Cache AOSP Clang r416183b
         id: cache-clang
         uses: actions/cache@v5
