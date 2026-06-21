@@ -129,17 +129,11 @@ jobs:
           )
 
           mkdir -p out
-          # Reproduce generate_defconfig.sh's blend EXACTLY (it calls merge_config WITHOUT -m,
-          # first arg = base, later args override). Comment in that script:
-          #   "Correct order is base_defconfig GKI.config QGKI.config consolidate.config debug.config"
           VENDOR=arch/arm64/configs/vendor
 
-          # Build the ALLYES_GKI fragment (forces GKI fragment's =m to =y)
           [ -f "$VENDOR/lahaina_GKI.config" ] && \
             ./scripts/gki/fragment_allyesconfig.sh "$VENDOR/lahaina_GKI.config" "$VENDOR/lahaina_ALLYES_GKI.config"
 
-          # merge_config.sh (no -m): first arg is base config, rest override it.
-          # Order: gki_defconfig (base) -> ALLYES_GKI -> QGKI -> consolidate -> debug
           scripts/kconfig/merge_config.sh -O out \
             arch/arm64/configs/gki_defconfig \
             "$VENDOR/lahaina_ALLYES_GKI.config" \
@@ -159,7 +153,6 @@ jobs:
           GCC="${{ github.workspace }}/toolchains/gcc-aarch64/bin"
           export PATH="$CLANG:$GCC:$PATH"
 
-          # Build Image
           make O=out ARCH=arm64 \
             CC="ccache clang" \
             CLANG_TRIPLE=aarch64-linux-gnu- \
