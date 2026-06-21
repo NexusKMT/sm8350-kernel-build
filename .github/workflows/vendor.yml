@@ -53,15 +53,11 @@ jobs:
           ls -la stock/
 
       - name: Collect CLO built .ko modules
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p clo/modules
-          SOURCE_KO=""
-          MANIFEST_DIR="clo/manifest"
-          if [ -f "$MANIFEST_DIR/all-ko-paths.txt" ]; then
-            while IFS= read -r line; do
-              [ -f "$line" ] && cp "$line" clo/modules/ 2>/dev/null || true
-            done < "$MANIFEST_DIR/all-ko-paths.txt"
-          fi
+          gh run download "${{ inputs.build_run_id }}" -R "$GITHUB_REPOSITORY" -n clo-modules -D clo/modules
           CLO_KO_COUNT=$(find clo/modules -name '*.ko' | wc -l)
           echo "CLO .ko collected: $CLO_KO_COUNT"
           find clo/modules -name '*.ko' | xargs -n1 basename | sort > clo/clo-ko-names.txt
@@ -69,7 +65,7 @@ jobs:
 
       - name: Mount stock vendor.img and inventory its modules
         run: |
-          mkdir -p /mnt/vendor
+          sudo mkdir -p /mnt/vendor
           sudo mount -o loop stock/vendor_a.img /mnt/vendor
           sudo find /mnt/vendor -name '*.ko' -printf '%p\n' | sort > stock/stock-ko-paths.txt
           STOCK_KO_COUNT=$(wc -l < stock/stock-ko-paths.txt)
