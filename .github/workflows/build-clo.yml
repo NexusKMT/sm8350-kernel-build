@@ -9,15 +9,13 @@ permissions:
 env:
   KERNEL_REPO: arter97-mirror/caf_msm-5.4
   KERNEL_REF: kernel.lnx.5.4.1.r1-rel
-  CLANG_REV: r383902
-  CLANG_BRANCH: master-kernel-build-2021
+  BUILD_REPO: https://android.googlesource.com/kernel/build
+  BUILD_REF: android11-release
 
 jobs:
   build:
     runs-on: ubuntu-22.04
     timeout-minutes: 120
-    env:
-      KBUILD_BUILD_TIMESTAMP: '@1616113200'
 
     steps:
       - name: Free disk space
@@ -34,13 +32,6 @@ jobs:
       - name: Checkout harness
         uses: actions/checkout@v7
 
-      - name: Checkout CLO kernel (arter97 mirror)
-        uses: actions/checkout@v7
-        with:
-          repository: ${{ env.KERNEL_REPO }}
-          ref: ${{ env.KERNEL_REF }}
-          path: kernel
-
       - name: Install build dependencies
         run: |
           sudo apt-get update -qq
@@ -49,145 +40,84 @@ jobs:
             gcc git libelf-dev libssl-dev lz4 make \
             python3 zip zstd
 
-      - name: Cache AOSP Clang ${{ env.CLANG_REV }}
+      - name: Set up workspace (official repo layout)
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          git clone --depth=1 -b "$BUILD_REF" "$BUILD_REPO" build
+          git clone --depth=1 -b "$KERNEL_REF" "https://github.com/${KERNEL_REPO}.git" kernel/msm-5.4
+          mkdir -p prebuilts-master/clang/host/linux-x86
+          mkdir -p prebuilts/gcc/linux-x86/aarch64
+          mkdir -p prebuilts/gcc/linux-x86/arm
+
+      - name: Cache AOSP Clang r416183b
         id: cache-clang
         uses: actions/cache@v5
         with:
-          path: ${{ github.workspace }}/toolchains/clang
-          key: aosp-clang-${{ env.CLANG_REV }}
+          path: prebuilts-master/clang/host/linux-x86/clang-r416183b
+          key: aosp-clang-r416183b
 
-      - name: Download AOSP Clang ${{ env.CLANG_REV }}
+      - name: Download AOSP Clang r416183b
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
-          mkdir -p toolchains/clang
-          curl -L "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/${CLANG_BRANCH}/clang-${CLANG_REV}.tar.gz" \
-            | tar xz -C toolchains/clang
-          toolchains/clang/bin/clang --version
+          cd prebuilts-master/clang/host/linux-x86
+          curl -L "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master-kernel-build-2021/clang-r416183b.tar.gz" \
+            | tar xz
+          mv clang-r416183b clang-r416183b_tmp 2>/dev/null || true
+          if [ -d clang-r416183b_tmp ]; then mv clang-r416183b_tmp clang-r416183b; fi
+          ls clang-r416183b/bin/clang && clang-r416183b/bin/clang --version
 
-      - name: Cache aarch64 GCC cross-toolchain
+      - name: Cache aarch64 + arm GCC 4.9
         id: cache-gcc
         uses: actions/cache@v5
         with:
-          path: ${{ github.workspace }}/toolchains/gcc-aarch64
-          key: aosp-gcc-aarch64-4.9-android12L
+          path: |
+            prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9
+            prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9
+          key: aosp-gcc-4.9-android12L
 
-      - name: Download aarch64 GCC cross-toolchain
+      - name: Download aarch64 + arm GCC 4.9
         if: steps.cache-gcc.outputs.cache-hit != 'true'
         run: |
-          mkdir -p toolchains/gcc-aarch64
           curl -L "https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/heads/android12L-release.tar.gz" \
-            | tar xz -C toolchains/gcc-aarch64
+            | tar xz -C prebuilts/gcc/linux-x86/aarch64
+          mv prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 prebuilts/gcc/linux-x86/aarch64/_tmp 2>/dev/null || true
+          mkdir -p prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9
+          curl -L "https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/heads/android12L-release.tar.gz" \
+            | tar xz -C prebuilts/gcc/linux-x86/arm
+          mkdir -p prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9
 
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2.23
         with:
-          key: sm8350-clo-lahaina-5.4
+          key: sm8350-clo-lahaina-5.4-official
           max-size: 2G
 
-      - name: Probe tree (what defconfigs / techpack / build.config are present?)
-        working-directory: kernel
+      - name: Build kernel + modules (official build.sh)
         run: |
-          echo "=== Makefile version ==="
-          head -5 Makefile
-          echo ""
-          echo "=== vendor defconfigs (lahaina) ==="
-          ls arch/arm64/configs/vendor/ | grep -i lahaina || echo "(no vendor/lahaina defconfigs)"
-          echo ""
-          echo "=== build.config.msm.lahaina present? ==="
-          ls build.config.msm.* 2>/dev/null || echo "(no build.config.msm.*)"
-          echo ""
-          echo "=== techpack/ contents ==="
-          ls techpack/ 2>/dev/null
-          echo ""
-          echo "=== DTBs: dts/vendor/qcom lahaina count ==="
-          ls arch/arm64/boot/dts/vendor/qcom/lahaina-qrd* 2>/dev/null | head || echo "(no lahaina-qrd DTB in dts/vendor/qcom)"
-          ls arch/arm64/boot/dts/qcom/lahaina-qrd* 2>/dev/null | head || echo "(no lahaina-qrd DTB in dts/qcom)"
+          cd "$GITHUB_WORKSPACE"
+          BUILD_CONFIG=kernel/msm-5.4/build.config.msm.lahaina \
+          VARIANT=qgki-debug \
+          CC="ccache clang" \
+          build/build.sh
 
-      - name: Configure kernel
-        working-directory: kernel
+      - name: Locate outputs
         run: |
-          CLANG="${{ github.workspace }}/toolchains/clang/bin"
-          GCC="${{ github.workspace }}/toolchains/gcc-aarch64/bin"
-          export PATH="$CLANG:$GCC:$PATH"
-
-          MAKE_FLAGS=(
-            O=out
-            ARCH=arm64
-            CC="ccache clang"
-            CLANG_TRIPLE=aarch64-linux-gnu-
-            CROSS_COMPILE=aarch64-linux-android-
-            CROSS_COMPILE_ARM32=arm-linux-androideabi-
-            LD=ld.lld
-            AR=llvm-ar
-            NM=llvm-nm
-            OBJCOPY=llvm-objcopy
-            OBJDUMP=llvm-objdump
-            STRIP=llvm-strip
-            LLVM=1
-            LLVM_IAS=1
-            KCFLAGS="-Wno-error=return-type -Wno-error=unused-function"
-          )
-
-          mkdir -p out
-          VENDOR=arch/arm64/configs/vendor
-
-          [ -f "$VENDOR/lahaina_GKI.config" ] && \
-            ./scripts/gki/fragment_allyesconfig.sh "$VENDOR/lahaina_GKI.config" "$VENDOR/lahaina_ALLYES_GKI.config"
-
-          scripts/kconfig/merge_config.sh -O out \
-            arch/arm64/configs/gki_defconfig \
-            "$VENDOR/lahaina_ALLYES_GKI.config" \
-            "$VENDOR/lahaina_QGKI.config" \
-            "$VENDOR/lahaina_consolidate.config" \
-            "$VENDOR/lahaina_debug.config"
-
-          make "${MAKE_FLAGS[@]}" olddefconfig
-
-          echo "=== resulting .config: key flags ==="
-          grep -E '^CONFIG_(LOCALVERSION|ARCH_LAHAINA|SCHED_WALT|NO_HZ_COMMON|LTO|CFI|MODVERSIONS|MODULES)=' out/.config | head
-
-      - name: Build kernel + modules
-        working-directory: kernel
-        run: |
-          CLANG="${{ github.workspace }}/toolchains/clang/bin"
-          GCC="${{ github.workspace }}/toolchains/gcc-aarch64/bin"
-          export PATH="$CLANG:$GCC:$PATH"
-
-          make O=out ARCH=arm64 \
-            CC="ccache clang" \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-android- \
-            CROSS_COMPILE_ARM32=arm-linux-androideabi- \
-            LD=ld.lld AR=llvm-ar NM=llvm-nm \
-            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
-            LLVM=1 LLVM_IAS=1 \
-            KCFLAGS="-Wno-error=return-type -Wno-error=unused-function" \
-            -j"$(nproc)"
-
-      - name: Install modules (.ko set)
-        working-directory: kernel
-        run: |
-          CLANG="${{ github.workspace }}/toolchains/clang/bin"
-          GCC="${{ github.workspace }}/toolchains/gcc-aarch64/bin"
-          export PATH="$CLANG:$GCC:$PATH"
-          mkdir -p out/modules
-          make O=out ARCH=arm64 \
-            CC="ccache clang" LLVM=1 LLVM_IAS=1 \
-            CROSS_COMPILE=aarch64-linux-android- \
-            KCFLAGS="-Wno-error=return-type -Wno-error=unused-function" \
-            INSTALL_MOD_PATH="$PWD/out/modules" \
-            INSTALL_MOD_STRIP=1 \
-            modules_install || echo "modules_install had issues (expected without techpack)"
-          echo "=== built .ko modules ==="
-          find out/modules -name '*.ko' | wc -l | sed 's/^/  .ko count: /'
-          find out/modules -name '*.ko' | head -20
+          cd "$GITHUB_WORKSPACE"
+          echo "=== Image ==="
+          find . -path '*/arch/arm64/boot/Image' -not -path '*/build/*' 2>/dev/null | head
+          echo "=== Module.symvers ==="
+          find . -name Module.symvers -not -path '*/build/*' 2>/dev/null | head
+          echo "=== .ko modules ==="
+          find . -name '*.ko' -not -path '*/build/*' 2>/dev/null | wc -l
 
       - name: Upload Image
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: clo-kernel-Image
-          path: kernel/out/arch/arm64/boot/Image
+          path: |
+            out/**/arch/arm64/boot/Image
+            **/arch/arm64/boot/Image
           if-no-files-found: warn
           retention-days: 7
 
@@ -196,15 +126,8 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: clo-Module.symvers
-          path: kernel/out/Module.symvers
+          path: |
+            out/**/Module.symvers
+            **/Module.symvers
           if-no-files-found: warn
           retention-days: 30
-
-      - name: Upload modules
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: clo-modules
-          path: kernel/out/modules/
-          if-no-files-found: warn
-          retention-days: 7
