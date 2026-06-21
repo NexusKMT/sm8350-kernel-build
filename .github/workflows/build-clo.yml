@@ -48,8 +48,11 @@ jobs:
           mkdir -p prebuilts-master/clang/host/linux-x86
           mkdir -p prebuilts/gcc/linux-x86/aarch64
           mkdir -p prebuilts/gcc/linux-x86/arm
+          mkdir -p prebuilts
+          git clone --depth=1 https://git.codelinaro.org/clo/la/platform/prebuilts/build-tools.git prebuilts/build-tools
           ls build/build.sh build/_setup_env.sh
           grep -c 'function append_cmd' build/_setup_env.sh
+          ls prebuilts/build-tools/linux-x86/bin/bison prebuilts/build-tools/common/bison 2>/dev/null | head
 
       - name: Cache AOSP Clang r416183b
         id: cache-clang
