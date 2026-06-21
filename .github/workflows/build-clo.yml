@@ -67,15 +67,15 @@ jobs:
 
       - name: Fetch lahaina DTBs (from Motorola SM8350 tree)
         run: |
-          cd "$GITHUB_WORKSPACE/kernel/msm-5.4/arch/arm64/boot/dts"
-          mkdir -p vendor/qcom
-          cd vendor/qcom
           git clone --depth=1 --filter=blob:none --sparse https://github.com/schqiushui/android_kernel_motorola_sm8350.git /tmp/moto
           cd /tmp/moto
           git sparse-checkout set arch/arm64/boot/dts/vendor/qcom
           git checkout
-          cp -r arch/arm64/boot/dts/vendor/qcom/lahaina-* "$GITHUB_WORKSPACE/kernel/msm-5.4/arch/arm64/boot/dts/vendor/qcom/"
-          ls "$GITHUB_WORKSPACE/kernel/msm-5.4/arch/arm64/boot/dts/vendor/qcom/" | grep lahaina-qrd | head
+          DEST="$GITHUB_WORKSPACE/kernel/msm-5.4/arch/arm64/boot/dts/vendor/qcom"
+          mkdir -p "$DEST"
+          cp -r arch/arm64/boot/dts/vendor/qcom/. "$DEST/"
+          ls "$DEST/Makefile" && echo "Makefile present"
+          ls "$DEST" | grep -c '^lahaina' | sed 's/^/  lahaina files: /'
 
       - name: Cache AOSP Clang r416183b
         id: cache-clang
