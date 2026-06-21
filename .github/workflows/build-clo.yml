@@ -93,6 +93,7 @@ jobs:
         run: |
           cd "$GITHUB_WORKSPACE"
           BUILD_CONFIG=kernel/msm-5.4/build.config.msm.lahaina \
+          KERNEL_DIR=kernel/msm-5.4 \
           VARIANT=qgki-debug \
           CC="ccache clang" \
           build/build.sh
