@@ -54,15 +54,15 @@ jobs:
           grep -c 'function append_cmd' build/_setup_env.sh
           ls prebuilts/build-tools/linux-x86/bin/bison prebuilts/build-tools/common/bison 2>/dev/null | head
 
-      - name: Fetch techpack components (CLO @ LA.UM.10.9.1.r1)
+      - name: Fetch techpack components (CLO @ LA.UM.10.9.1.r1* — per-component closest branch)
         run: |
           cd "$GITHUB_WORKSPACE/kernel/msm-5.4/techpack"
           CLO=https://git.codelinaro.org/clo/la/platform/vendor/opensource
-          git clone --depth=1 -b "$KERNEL_REF" "$CLO/audio-kernel.git"   audio
-          git clone --depth=1 -b "$KERNEL_REF" "$CLO/display-drivers.git" display
-          git clone --depth=1 -b "$KERNEL_REF" "$CLO/video-driver.git"   video
-          git clone --depth=1 -b "$KERNEL_REF" "$CLO/dataipa.git"        dataipa
-          git clone --depth=1 -b "$KERNEL_REF" "$CLO/camera-kernel.git"  camera
+          git clone --depth=1 -b LA.UM.10.9.1.r1   "$CLO/audio-kernel.git"   audio
+          git clone --depth=1 -b LA.UM.10.9.1.r1.1 "$CLO/display-drivers.git" display
+          git clone --depth=1 -b LA.UM.10.9.1.r1   "$CLO/video-driver.git"   video
+          git clone --depth=1 -b LA.UM.10.9.1.r1   "$CLO/dataipa.git"        dataipa
+          git clone --depth=1 -b LA.UM.10.9.1.r1.1 "$CLO/camera-kernel.git"  camera
           ls
 
       - name: Fetch lahaina DTBs (from Motorola SM8350 tree)
