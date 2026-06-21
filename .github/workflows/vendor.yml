@@ -81,6 +81,7 @@ jobs:
         run: |
           KVER=$(cat stock/kver.txt)
           MODDIR="lib/modules/${KVER}"
+          mkdir -p out
           cp stock/vendor_a.img out/vendor-new.img
           REPLACED=0
           KEPT=0
