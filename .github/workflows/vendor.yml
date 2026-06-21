@@ -105,16 +105,16 @@ jobs:
 
       - name: Regenerate depmod + repack vendor.img
         run: |
+          cd "$GITHUB_WORKSPACE"
           KVER=$(ls vendor-work/lib/modules/ | head -1)
           echo "kernel version dir: $KVER"
           depmod -b vendor-work "$KVER" 2>&1 || echo "depmod warning (expected for cross-arch)"
           head -5 "vendor-work/lib/modules/${KVER}/modules.dep"
           VENDOR_SIZE=$(stat -c%s stock/vendor_a.img)
           echo "original vendor.img size: $VENDOR_SIZE"
-          mke2fs -t ext4 -b 4096 -d vendor-work -L vendor out/vendor-new.img $((VENDOR_SIZE / 4096)) 2>&1 || {
-            echo "mke2fs failed, trying mkuserimg_mke2fs"
-            mkuserimg_mke2fs vendor-work out/vendor-new.img ext4 vendor "$VENDOR_SIZE" 2>&1
-          }
+          BLOCKS=$((VENDOR_SIZE / 4096))
+          mkdir -p out
+          mke2fs -t ext4 -b 4096 -d vendor-work -L vendor "out/vendor-new.img" "$BLOCKS"
           ls -la out/vendor-new.img
 
       - name: Build boot.img (CLO Image + alpha ramdisk + avb pad)
