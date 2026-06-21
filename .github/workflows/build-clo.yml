@@ -69,13 +69,17 @@ jobs:
         run: |
           git clone --depth=1 --filter=blob:none --sparse https://github.com/schqiushui/android_kernel_motorola_sm8350.git /tmp/moto
           cd /tmp/moto
-          git sparse-checkout set arch/arm64/boot/dts/vendor/qcom
+          git sparse-checkout set arch/arm64/boot/dts/vendor
           git checkout
-          DEST="$GITHUB_WORKSPACE/kernel/msm-5.4/arch/arm64/boot/dts/vendor/qcom"
-          mkdir -p "$DEST"
-          cp -r arch/arm64/boot/dts/vendor/qcom/. "$DEST/"
-          ls "$DEST/Makefile" && echo "Makefile present"
-          ls "$DEST" | grep -c '^lahaina' | sed 's/^/  lahaina files: /'
+          DTS_ROOT="$GITHUB_WORKSPACE/kernel/msm-5.4/arch/arm64/boot/dts"
+          mkdir -p "$DTS_ROOT/vendor/qcom"
+          cp -r arch/arm64/boot/dts/vendor/qcom/. "$DTS_ROOT/vendor/qcom/"
+          cp arch/arm64/boot/dts/vendor/Makefile "$DTS_ROOT/vendor/Makefile"
+          ls "$DTS_ROOT/vendor/Makefile" "$DTS_ROOT/vendor/qcom/Makefile" && echo "both Makefiles present"
+          if ! grep -q 'subdir-y += vendor' "$DTS_ROOT/Makefile"; then
+            echo 'subdir-y += vendor' >> "$DTS_ROOT/Makefile"
+          fi
+          grep 'subdir-y += vendor' "$DTS_ROOT/Makefile"
 
       - name: Cache AOSP Clang r416183b
         id: cache-clang
