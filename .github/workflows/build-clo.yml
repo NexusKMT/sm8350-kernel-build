@@ -212,6 +212,20 @@ jobs:
           path: /tmp/manifest/
           if-no-files-found: warn
 
+      - name: Collect + upload all .ko modules
+        if: always()
+        run: |
+          mkdir -p /tmp/all-modules
+          OUT=$(find out -maxdepth 1 -type d | grep -v '^out$' | head -1)
+          find "$OUT" -name '*.ko' -exec cp {} /tmp/all-modules/ \; 2>/dev/null
+          echo "total .ko: $(ls /tmp/all-modules/*.ko 2>/dev/null | wc -l)"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: clo-modules
+          path: /tmp/all-modules/*.ko
+          if-no-files-found: warn
+
       - name: Upload Image
         if: always()
         uses: actions/upload-artifact@v7
