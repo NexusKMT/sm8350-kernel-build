@@ -66,7 +66,10 @@ jobs:
       - name: Mount stock vendor.img and inventory its modules
         run: |
           sudo mkdir -p /mnt/vendor
-          sudo mount -o loop stock/vendor_a.img /mnt/vendor
+          sudo losetup -f stock/vendor_a.img
+          LOOP=$(sudo losetup -j stock/vendor_a.img | head -1 | cut -d: -f1)
+          echo "loop device: $LOOP"
+          sudo mount -t ext4 "$LOOP" /mnt/vendor
           sudo find /mnt/vendor -name '*.ko' -printf '%p\n' | sort > stock/stock-ko-paths.txt
           STOCK_KO_COUNT=$(wc -l < stock/stock-ko-paths.txt)
           echo "stock vendor .ko count: $STOCK_KO_COUNT"
@@ -109,9 +112,10 @@ jobs:
       - name: Unmount and repack vendor.img
         run: |
           sudo umount /mnt/vendor
+          sudo losetup -D
           VENDOR_SIZE=$(stat -c%s stock/vendor_a.img)
           echo "original vendor.img size: $VENDOR_SIZE"
-          mkuserimg_mke2fs -s stock/vendor_a.img out/vendor-new.img ext4 vendor "$VENDOR_SIZE" 2>&1 || {
+          mkuserimg_mke2fs stock/vendor_a.img out/vendor-new.img ext4 vendor "$VENDOR_SIZE" 2>&1 || {
             echo "mkuserimg_mke2fs failed, trying mke2fs approach"
             mke2fs -t ext4 -b 4096 -d stock/vendor_a.img -L vendor out/vendor-new.img $((VENDOR_SIZE / 4096)) 2>&1
           }
