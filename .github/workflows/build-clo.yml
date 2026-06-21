@@ -65,6 +65,19 @@ jobs:
           git clone --depth=1 -b LA.UM.10.9.1.r1.1 "$CLO/camera-kernel.git"  camera
           ls
 
+      - name: Force all techpack DLKM to builtin (=y, all-builtin strategy)
+        run: |
+          cd "$GITHUB_WORKSPACE/kernel/msm-5.4/techpack"
+          echo "=== Patching techpack .conf files: =m → =y ==="
+          find . -name '*.conf' -path '*/config/*' | while read -r conf; do
+            echo "  patching $conf"
+            sed -i 's/=m$/=y/g' "$conf"
+          done
+          echo "=== Patching DISPLAY_BUILD=m → =y ==="
+          find . -name '*disp*.conf' -path '*/config/*' -exec sed -i 's/CONFIG_DISPLAY_BUILD=m/CONFIG_DISPLAY_BUILD=y/g' {} \;
+          echo "=== Verifying: no =m left in .conf files ==="
+          grep -rn '=m' */config/*.conf 2>/dev/null || echo "  all .conf files are now =y"
+
       - name: Fetch lahaina DTBs (from Motorola SM8350 tree)
         run: |
           git clone --depth=1 --filter=blob:none --sparse https://github.com/schqiushui/android_kernel_motorola_sm8350.git /tmp/moto
@@ -149,15 +162,37 @@ jobs:
           key: sm8350-clo-lahaina-5.4-official
           max-size: 2G
 
-      - name: Build kernel + modules (official build.sh)
+      - name: Build kernel (official build.sh, all-builtin)
         run: |
           cd "$GITHUB_WORKSPACE"
           BUILD_CONFIG=kernel/msm-5.4/build.config.msm.lahaina \
           KERNEL_DIR=kernel/msm-5.4 \
           VARIANT=qgki-debug \
-          MAKE_GOALS="Image modules dtbs" \
+          MAKE_GOALS="Image dtbs" \
           CC="ccache clang" \
           build/build.sh
+
+      - name: Package boot.img (CLO Image + alpha ramdisk + AVB pad)
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          CLO_IMAGE=$(find out -name 'Image' -path '*/arch/arm64/boot/*' -type f | head -1)
+          echo "CLO Image: $CLO_IMAGE ($(stat -c%s "$CLO_IMAGE") bytes)"
+          mkdir -p out/dist boot-work
+          python3 tools/mkbootimg/unpack_bootimg.py --boot_img boot/alpha-boot_a.img --out boot-work >/dev/null 2>&1
+          python3 tools/mkbootimg/mkbootimg.py \
+            --header_version 3 \
+            --os_version 11.0.0 \
+            --os_patch_level 2021-01 \
+            --kernel "$CLO_IMAGE" \
+            --ramdisk boot-work/ramdisk \
+            --cmdline ' androidboot.selinux=permissive' \
+            -o out/dist/boot-new.img
+          python3 tools/avb/avbtool.py add_hash_footer \
+            --image out/dist/boot-new.img \
+            --partition_size 100663296 \
+            --partition_name boot
+          ls -la out/dist/boot-new.img
+          echo "boot.img size: $(stat -c%s out/dist/boot-new.img) bytes"
 
       - name: Locate outputs
         run: |
@@ -237,13 +272,9 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      - name: Upload Module.symvers
-        if: always()
+      - name: Upload boot.img (flashable, all-builtin)
         uses: actions/upload-artifact@v7
         with:
-          name: clo-Module.symvers
-          path: |
-            out/**/Module.symvers
-            **/Module.symvers
-          if-no-files-found: warn
-          retention-days: 30
+          name: boot-img
+          path: out/dist/boot-new.img
+          if-no-files-found: error
