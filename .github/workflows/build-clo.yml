@@ -8,7 +8,7 @@ permissions:
 
 env:
   KERNEL_REPO: arter97-mirror/caf_msm-5.4
-  KERNEL_REF: kernel.lnx.5.4.1.r1-rel
+  KERNEL_REF: LA.UM.10.9.1.r1
   BUILD_REPO: https://github.com/KudProject/kernel_build.git
   BUILD_REF: android-12.1
 
