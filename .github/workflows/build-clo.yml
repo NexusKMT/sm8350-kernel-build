@@ -75,32 +75,32 @@ jobs:
           mkdir -p "$DTS_ROOT/vendor/qcom"
           cp -r arch/arm64/boot/dts/vendor/qcom/. "$DTS_ROOT/vendor/qcom/"
           cp arch/arm64/boot/dts/vendor/Makefile "$DTS_ROOT/vendor/Makefile"
-          cat > "$DTS_ROOT/vendor/qcom/Makefile" <<'MAKEFILE'
-dtb-$(CONFIG_ARCH_LAHAINA) += lahaina-rumi.dtb \
-	lahaina-mtp-hsp.dtb \
-	lahaina-mtp.dtb \
-	lahaina-qrd-hsp.dtb \
-	lahaina-qrd.dtb \
-	lahaina-qrd-module.dtb \
-	lahainap-mtp.dtb \
-	lahainap-qrd.dtb
-
-ifeq ($(CONFIG_BUILD_ARM64_DT_OVERLAY),y)
-dtbo-$(CONFIG_ARCH_LAHAINA) += lahaina-qrd-overlay.dtbo \
-	lahaina-mtp-overlay.dtbo \
-	lahaina-qrd-hsp-overlay.dtbo \
-	lahaina-qrd-module-overlay.dtbo \
-	lahaina-mtp-hsp-overlay.dtbo
-
-lahaina-qrd-overlay.dtbo-base := lahaina.dtb lahaina-v2.dtb lahaina-v2.1.dtb
-lahaina-mtp-overlay.dtbo-base := lahaina.dtb lahaina-v2.dtb lahaina-v2.1.dtb
-lahaina-qrd-hsp-overlay.dtbo-base := lahaina.dtb
-lahaina-qrd-module-overlay.dtbo-base := lahaina.dtb lahaina-v2.dtb lahaina-v2.1.dtb
-lahaina-mtp-hsp-overlay.dtbo-base := lahaina.dtb
-endif
-
-always-y := $(dtb-y) $(dtbo-y)
-MAKEFILE
+          printf '%s\n' \
+            'dtb-$(CONFIG_ARCH_LAHAINA) += lahaina-rumi.dtb \' \
+            '	lahaina-mtp-hsp.dtb \' \
+            '	lahaina-mtp.dtb \' \
+            '	lahaina-qrd-hsp.dtb \' \
+            '	lahaina-qrd.dtb \' \
+            '	lahaina-qrd-module.dtb \' \
+            '	lahainap-mtp.dtb \' \
+            '	lahainap-qrd.dtb' \
+            '' \
+            'ifeq ($(CONFIG_BUILD_ARM64_DT_OVERLAY),y)' \
+            'dtbo-$(CONFIG_ARCH_LAHAINA) += lahaina-qrd-overlay.dtbo \' \
+            '	lahaina-mtp-overlay.dtbo \' \
+            '	lahaina-qrd-hsp-overlay.dtbo \' \
+            '	lahaina-qrd-module-overlay.dtbo \' \
+            '	lahaina-mtp-hsp-overlay.dtbo' \
+            '' \
+            'lahaina-qrd-overlay.dtbo-base := lahaina.dtb lahaina-v2.dtb lahaina-v2.1.dtb' \
+            'lahaina-mtp-overlay.dtbo-base := lahaina.dtb lahaina-v2.dtb lahaina-v2.1.dtb' \
+            'lahaina-qrd-hsp-overlay.dtbo-base := lahaina.dtb' \
+            'lahaina-qrd-module-overlay.dtbo-base := lahaina.dtb lahaina-v2.dtb lahaina-v2.1.dtb' \
+            'lahaina-mtp-hsp-overlay.dtbo-base := lahaina.dtb' \
+            'endif' \
+            '' \
+            'always-y := $(dtb-y) $(dtbo-y)' \
+            > "$DTS_ROOT/vendor/qcom/Makefile"
           if ! grep -q 'subdir-y += vendor' "$DTS_ROOT/Makefile"; then
             echo 'subdir-y += vendor' >> "$DTS_ROOT/Makefile"
           fi
