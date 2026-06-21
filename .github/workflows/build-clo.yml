@@ -65,21 +65,13 @@ jobs:
           git clone --depth=1 -b LA.UM.10.9.1.r1.1 "$CLO/camera-kernel.git"  camera
           ls
 
-      - name: Force all techpack DLKM to builtin (=y, all-builtin strategy)
+      - name: Force display DLKM to builtin (all-builtin, skip audio to avoid codec conflicts)
         run: |
           cd "$GITHUB_WORKSPACE/kernel/msm-5.4/techpack"
-          echo "=== Patching techpack .conf files: =m to =y ==="
-          find . -name '*.conf' -path '*/config/*' | while read -r conf; do
-            echo "  patching $conf"
-            sed -i 's/=m$/=y/g' "$conf"
-          done
-          echo "=== Patching DISPLAY_BUILD=m to =y ==="
+          echo "=== Only patch display .conf: DISPLAY_BUILD=m to =y ==="
           find . -name '*disp*.conf' -path '*/config/*' -exec sed -i 's/CONFIG_DISPLAY_BUILD=m/CONFIG_DISPLAY_BUILD=y/g' {} \;
-          echo "=== Disabling WCD937X (forza uses WCD938X; both builtin causes duplicate tx_master_ch symbols) ==="
-          find . -name '*.conf' -path '*/config/*' -exec sed -i 's/export CONFIG_SND_SOC_WCD937X=y/# export CONFIG_SND_SOC_WCD937X=y/g' {} \;
-          echo "=== Verifying ==="
-          grep -rn '=m' */config/*.conf 2>/dev/null || echo "  all .conf files are now =y"
-          grep -rn 'WCD937X' */config/*.conf 2>/dev/null | head
+          echo "=== Audio .conf left as-is (=m, will compile as module but not packaged) ==="
+          echo "=== Other techpack already uses .conf QGKI logic for =y/=m ==="
 
       - name: Fetch lahaina DTBs (from Motorola SM8350 tree)
         run: |
