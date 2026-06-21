@@ -1,0 +1,162 @@
+name: Vendor
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: "BuildCLO run ID to pull kernel Image + modules from"
+        required: true
+        default: "27914596209"
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout harness
+        uses: actions/checkout@v7
+
+      - name: Install deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            python3 cpio gzip e2fsprogs simg2img img2simg \
+            device-tree-compiler
+
+      - name: Fetch official mkbootimg + avbtool
+        run: |
+          git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg tools/mkbootimg
+          git clone --depth=1 https://android.googlesource.com/platform/external/avb       tools/avb
+
+      - name: Download CLO kernel Image + modules from BuildCLO run
+        run: |
+          mkdir -p clo
+          gh run download "${{ inputs.build_run_id }}" -R "$GITHUB_REPOSITORY" -n clo-kernel-Image    -D clo/image
+          gh run download "${{ inputs.build_run_id }}" -R "$GITHUB_REPOSITORY" -n clo-Module.symvers -D clo/symvers
+          gh run download "${{ inputs.build_run_id }}" -R "$GITHUB_REPOSITORY" -n clo-manifest       -D clo/manifest
+          ls -la clo/image/ clo/manifest/
+
+      - name: Download stock firmware from release
+        run: |
+          mkdir -p stock
+          gh release download firmware-vendor -R "$GITHUB_REPOSITORY" -D stock \
+            -p "vendor_a.img.gz" -p "vendor_boot_a.img.gz" -p "odm_a.img" -p "dtbo_a.img.gz"
+          for f in stock/*.gz; do gunzip -f "$f"; done
+          ls -la stock/
+
+      - name: Collect CLO built .ko modules
+        run: |
+          mkdir -p clo/modules
+          SOURCE_KO=""
+          MANIFEST_DIR="clo/manifest"
+          if [ -f "$MANIFEST_DIR/all-ko-paths.txt" ]; then
+            while IFS= read -r line; do
+              [ -f "$line" ] && cp "$line" clo/modules/ 2>/dev/null || true
+            done < "$MANIFEST_DIR/all-ko-paths.txt"
+          fi
+          CLO_KO_COUNT=$(find clo/modules -name '*.ko' | wc -l)
+          echo "CLO .ko collected: $CLO_KO_COUNT"
+          find clo/modules -name '*.ko' | xargs -n1 basename | sort > clo/clo-ko-names.txt
+          cat clo/clo-ko-names.txt | head -20
+
+      - name: Mount stock vendor.img and inventory its modules
+        run: |
+          mkdir -p /mnt/vendor
+          sudo mount -o loop stock/vendor_a.img /mnt/vendor
+          sudo find /mnt/vendor -name '*.ko' -printf '%p\n' | sort > stock/stock-ko-paths.txt
+          STOCK_KO_COUNT=$(wc -l < stock/stock-ko-paths.txt)
+          echo "stock vendor .ko count: $STOCK_KO_COUNT"
+          sudo find /mnt/vendor -name '*.ko' | xargs -n1 sudo basename | sort -u > stock/stock-ko-names.txt
+          head -20 stock/stock-ko-names.txt
+
+      - name: Replace kernel modules in stock vendor (inject .ko)
+        run: |
+          echo "=== Module replacement map ==="
+          echo "CLO modules: $(wc -l < clo/clo-ko-names.txt)"
+          echo "stock modules: $(wc -l < stock/stock-ko-names.txt)"
+          REPLACED=0
+          KEPT=0
+          while IFS= read -r ko_name; do
+            STOCK_PATH=$(grep "/${ko_name}$" stock/stock-ko-paths.txt | head -1)
+            CLO_PATH="clo/modules/${ko_name}"
+            if [ -n "$STOCK_PATH" ] && [ -f "$CLO_PATH" ]; then
+              sudo cp "$CLO_PATH" "$STOCK_PATH"
+              sudo chmod 644 "$STOCK_PATH"
+              REPLACED=$((REPLACED + 1))
+              echo "  REPLACE: $ko_name"
+            elif [ -n "$STOCK_PATH" ]; then
+              KEPT=$((KEPT + 1))
+            fi
+          done < stock/stock-ko-names.txt
+          echo ""
+          echo "=== Summary ==="
+          echo "Replaced (CLO .ko → stock vendor): $REPLACED"
+          echo "Kept stock (no CLO equivalent):     $KEPT"
+          echo "CLO-only (not in stock, skipped):  $(comm -23 clo/clo-ko-names.txt stock/stock-ko-names.txt | wc -l)"
+
+      - name: Regenerate depmod for replaced modules
+        run: |
+          KVER=$(ls /mnt/vendor/lib/modules/ | head -1)
+          echo "kernel version dir: $KVER"
+          sudo depmod -b /mnt/vendor "$KVER" 2>&1 || echo "depmod warning (expected for cross-arch)"
+          echo "=== modules.dep regenerated ==="
+          sudo head -5 "/mnt/vendor/lib/modules/${KVER}/modules.dep"
+
+      - name: Unmount and repack vendor.img
+        run: |
+          sudo umount /mnt/vendor
+          VENDOR_SIZE=$(stat -c%s stock/vendor_a.img)
+          echo "original vendor.img size: $VENDOR_SIZE"
+          mkuserimg_mke2fs -s stock/vendor_a.img out/vendor-new.img ext4 vendor "$VENDOR_SIZE" 2>&1 || {
+            echo "mkuserimg_mke2fs failed, trying mke2fs approach"
+            mke2fs -t ext4 -b 4096 -d stock/vendor_a.img -L vendor out/vendor-new.img $((VENDOR_SIZE / 4096)) 2>&1
+          }
+          ls -la out/vendor-new.img
+
+      - name: Build boot.img (CLO Image + alpha ramdisk + avb pad)
+        run: |
+          CLO_IMAGE=$(find clo/image -name 'Image' -type f | head -1)
+          echo "CLO Image: $CLO_IMAGE ($(stat -c%s "$CLO_IMAGE") bytes)"
+          mkdir -p boot-work
+          python3 tools/mkbootimg/unpack_bootimg.py --boot_img boot/alpha-boot_a.img --out boot-work/stock >/dev/null 2>&1
+          ls boot-work/stock/
+          python3 tools/mkbootimg/mkbootimg.py \
+            --header_version 3 \
+            --os_version 11.0.0 \
+            --os_patch_level 2021-01 \
+            --kernel "$CLO_IMAGE" \
+            --ramdisk boot-work/stock/ramdisk \
+            --cmdline ' androidboot.selinux=permissive' \
+            -o out/boot-new.img
+          python3 tools/avb/avbtool.py add_hash_footer \
+            --image out/boot-new.img \
+            --partition_size 100663296 \
+            --partition_name boot
+          ls -la out/boot-new.img
+
+      - name: Upload vendor-new.img
+        uses: actions/upload-artifact@v7
+        with:
+          name: vendor-img
+          path: out/vendor-new.img
+          if-no-files-found: error
+
+      - name: Upload boot-new.img
+        uses: actions/upload-artifact@v7
+        with:
+          name: boot-img
+          path: out/boot-new.img
+          if-no-files-found: error
+
+      - name: Upload replacement report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: vendor-report
+          path: |
+            clo/clo-ko-names.txt
+            stock/stock-ko-names.txt
