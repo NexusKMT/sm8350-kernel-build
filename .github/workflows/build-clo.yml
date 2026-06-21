@@ -9,8 +9,8 @@ permissions:
 env:
   KERNEL_REPO: arter97-mirror/caf_msm-5.4
   KERNEL_REF: kernel.lnx.5.4.1.r1-rel
-  BUILD_REPO: https://android.googlesource.com/kernel/build
-  BUILD_REF: android11-release
+  BUILD_REPO: https://github.com/KudProject/kernel_build.git
+  BUILD_REF: android-12.1
 
 jobs:
   build:
@@ -48,6 +48,8 @@ jobs:
           mkdir -p prebuilts-master/clang/host/linux-x86
           mkdir -p prebuilts/gcc/linux-x86/aarch64
           mkdir -p prebuilts/gcc/linux-x86/arm
+          ls build/build.sh build/_setup_env.sh
+          grep -c 'function append_cmd' build/_setup_env.sh
 
       - name: Cache AOSP Clang r416183b
         id: cache-clang
