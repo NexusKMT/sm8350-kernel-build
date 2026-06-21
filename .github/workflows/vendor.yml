@@ -67,10 +67,14 @@ jobs:
         run: |
           file stock/vendor_a.img
           sudo mkdir -p /mnt/vendor
-          sudo mount -o loop stock/vendor_a.img /mnt/vendor || {
-            echo "mount failed, trying simg2img first..."
-            simg2img stock/vendor_a.img stock/vendor_raw.img
-            sudo mount -o loop stock/vendor_raw.img /mnt/vendor
+          sudo mount -t ext2 -o loop stock/vendor_a.img /mnt/vendor || {
+            echo "ext2 mount failed, trying with offset..."
+            sudo losetup -f --show -P stock/vendor_a.img 2>/dev/null || true
+            sudo mount -o loop stock/vendor_a.img /mnt/vendor 2>/dev/null || true
+            if ! mountpoint -q /mnt/vendor; then
+              echo "FATAL: cannot mount vendor.img"
+              exit 1
+            fi
           }
           sudo find /mnt/vendor -name '*.ko' -printf '%p\n' | sort > stock/stock-ko-paths.txt
           STOCK_KO_COUNT=$(wc -l < stock/stock-ko-paths.txt)
