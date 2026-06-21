@@ -63,61 +63,48 @@ jobs:
           find clo/modules -name '*.ko' | xargs -n1 basename | sort > clo/clo-ko-names.txt
           cat clo/clo-ko-names.txt | head -20
 
-      - name: Mount ro + copy vendor.img to workdir
+      - name: Inventory stock vendor.img modules (read-only mount)
         run: |
           file stock/vendor_a.img
           sudo mkdir -p /mnt/vendor
           sudo mount -o loop,ro stock/vendor_a.img /mnt/vendor
-          mkdir -p vendor-work
-          sudo cp -a /mnt/vendor/. vendor-work/
-          sudo umount /mnt/vendor
-          sudo chown -R runner:runner vendor-work
-          find vendor-work -name '*.ko' -printf '%p\n' | sort > stock/stock-ko-paths.txt
-          STOCK_KO_COUNT=$(wc -l < stock/stock-ko-paths.txt)
-          echo "stock vendor .ko count: $STOCK_KO_COUNT"
-          find vendor-work -name '*.ko' | xargs -n1 basename | sort -u > stock/stock-ko-names.txt
+          sudo find /mnt/vendor -name '*.ko' -printf '%P\n' | sort > stock/stock-ko-relpaths.txt
+          sudo find /mnt/vendor -name '*.ko' | xargs -n1 sudo basename | sort -u > stock/stock-ko-names.txt
+          echo "stock vendor .ko count: $(wc -l < stock/stock-ko-names.txt)"
           head -20 stock/stock-ko-names.txt
+          KVER=$(ls /mnt/vendor/lib/modules/ | head -1)
+          echo "$KVER" > stock/kver.txt
+          echo "kernel version dir: $KVER"
+          sudo umount /mnt/vendor
 
-      - name: Replace kernel modules in vendor workdir (inject .ko)
+      - name: Patch .ko modules into stock vendor.img using debugfs
         run: |
-          echo "=== Module replacement map ==="
-          echo "CLO modules: $(wc -l < clo/clo-ko-names.txt)"
-          echo "stock modules: $(wc -l < stock/stock-ko-names.txt)"
+          KVER=$(cat stock/kver.txt)
+          MODDIR="lib/modules/${KVER}"
+          cp stock/vendor_a.img out/vendor-new.img
           REPLACED=0
           KEPT=0
+          DEBUGFS_CMDS=""
           while IFS= read -r ko_name; do
-            STOCK_PATH=$(grep "/${ko_name}$" stock/stock-ko-paths.txt | head -1)
+            STOCK_REL=$(grep "/${ko_name}$" stock/stock-ko-relpaths.txt | head -1)
             CLO_PATH="clo/modules/${ko_name}"
-            if [ -n "$STOCK_PATH" ] && [ -f "$CLO_PATH" ]; then
-              cp "$CLO_PATH" "$STOCK_PATH"
-              chmod 644 "$STOCK_PATH"
+            if [ -n "$STOCK_REL" ] && [ -f "$CLO_PATH" ]; then
+              DEBUGFS_CMDS="${DEBUGFS_CMDS}rm ${STOCK_REL}\nwrite ${CLO_PATH} ${STOCK_REL}\nset_inode_field ${STOCK_REL} mode 0100644\n"
               REPLACED=$((REPLACED + 1))
-              echo "  REPLACE: $ko_name"
-            elif [ -n "$STOCK_PATH" ]; then
+              echo "  REPLACE: $ko_name → ${STOCK_REL}"
+            elif [ -n "$STOCK_REL" ]; then
               KEPT=$((KEPT + 1))
             fi
           done < stock/stock-ko-names.txt
           echo ""
           echo "=== Summary ==="
-          echo "Replaced (CLO .ko → stock vendor): $REPLACED"
-          echo "Kept stock (no CLO equivalent):     $KEPT"
-          echo "CLO-only (not in stock, skipped):  $(comm -23 clo/clo-ko-names.txt stock/stock-ko-names.txt | wc -l)"
-
-      - name: Regenerate depmod + repack vendor.img
-        run: |
-          cd "$GITHUB_WORKSPACE"
-          KVER=$(ls vendor-work/lib/modules/ | head -1)
-          echo "kernel version dir: $KVER"
-          depmod -b vendor-work "$KVER" 2>&1 || echo "depmod warning (expected for cross-arch)"
-          head -5 "vendor-work/lib/modules/${KVER}/modules.dep"
-          VENDOR_SIZE=$(stat -c%s stock/vendor_a.img)
-          echo "original vendor.img size: $VENDOR_SIZE"
-          BLOCKS=$(( VENDOR_SIZE / 4096 ))
-          echo "allocating $BLOCKS blocks ($VENDOR_SIZE bytes, fixed = stock partition size)"
-          mkdir -p out
-          mke2fs -t ext4 -b 4096 -d vendor-work -L vendor "out/vendor-new.img" "$BLOCKS"
+          echo "Replaced: $REPLACED"
+          echo "Kept stock: $KEPT"
+          echo "=== Running debugfs batch ==="
+          printf "%b" "$DEBUGFS_CMDS" > /tmp/debugfs_cmds.txt
+          wc -l /tmp/debugfs_cmds.txt
+          debugfs -w -f /tmp/debugfs_cmds.txt out/vendor-new.img 2>&1 | tail -5
           ls -la out/vendor-new.img
-          echo "new vendor.img size: $(stat -c%s out/vendor-new.img)"
 
       - name: Build boot.img (CLO Image + alpha ramdisk + avb pad)
         run: |
