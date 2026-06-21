@@ -85,7 +85,7 @@ jobs:
           strings -a "$CLO_IMAGE" > clo/clo-kernel-strings.txt
           echo "CLO kernel strings: $(wc -l < clo/clo-kernel-strings.txt)"
 
-      - name: Audit — for each stock vendor .ko: is it builtin in CLO Image?
+      - name: Audit each stock vendor .ko (builtin in CLO Image?)
         run: |
           mkdir -p out
           echo "# Vendor module audit: builtin coverage analysis" > out/audit-report.md
