@@ -1,0 +1,149 @@
+name: Audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: "BuildCLO run ID (for CLO Image + Module.symvers + manifest)"
+        required: true
+        default: "27916917873"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout harness
+        uses: actions/checkout@v7
+
+      - name: Install deps
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends kmod e2fsprogs
+
+      - name: Download CLO Image + manifest + Module.symvers
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p clo
+          gh run download "${{ inputs.build_run_id }}" -R "$GITHUB_REPOSITORY" -n clo-kernel-Image    -D clo/image
+          gh run download "${{ inputs.build_run_id }}" -R "$GITHUB_REPOSITORY" -n clo-Module.symvers -D clo/symvers
+          gh run download "${{ inputs.build_run_id }}" -R "$GITHUB_REPOSITORY" -n clo-manifest       -D clo/manifest
+
+      - name: Download stock firmware + debug boot
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p stock
+          gh release download firmware-vendor -R "$GITHUB_REPOSITORY" -D stock -p "vendor_a.img.gz"
+          gunzip -f stock/vendor_a.img.gz
+
+      - name: Extract stock IKCONFIG from debug boot
+        run: |
+          curl -sL "https://android.googlesource.com/kernel/msm/+/refs/tags/android-11.0.0_r0.31/scripts/extract-ikconfig?format=TEXT" \
+            | base64 -d > /tmp/extract-ikconfig
+          chmod +x /tmp/extract-ikconfig
+          /tmp/extract-ikconfig boot/debug-boot_a.img > stock/stock-ikconfig.txt
+          echo "stock config lines: $(wc -l < stock/stock-ikconfig.txt)"
+
+      - name: Find CLO Image
+        run: |
+          CLO_IMAGE=$(find clo/image -name 'Image' -type f | head -1)
+          echo "CLO_IMAGE=$CLO_IMAGE" >> "$GITHUB_ENV"
+          ls -la "$CLO_IMAGE"
+
+      - name: Extract CLO .config
+        run: |
+          cp clo/manifest/dot-config clo/clo-config.txt
+          echo "CLO config lines: $(wc -l < clo/clo-config.txt)"
+
+      - name: Mount stock vendor ro + list modules
+        run: |
+          sudo mkdir -p /mnt/vendor
+          sudo mount -o loop,ro stock/vendor_a.img /mnt/vendor
+          sudo find /mnt/vendor -name '*.ko' -printf '%f\n' | sort -u > stock/vendor-ko-names.txt
+          sudo find /mnt/vendor -name '*.ko' -printf '%P\n' | sort > stock/vendor-ko-relpaths.txt
+          KVER=$(ls /mnt/vendor/lib/modules/ | head -1)
+          echo "KVER=$KVER" >> "$GITHUB_ENV"
+          cat /mnt/vendor/lib/modules/${KVER}/modules.load 2>/dev/null | xargs -n1 basename 2>/dev/null | sort -u > stock/modules-load-names.txt || true
+          echo "vendor .ko: $(wc -l < stock/vendor-ko-names.txt)"
+          echo "modules.load entries: $(wc -l < stock/modules-load-names.txt)"
+          sudo umount /mnt/vendor
+
+      - name: Extract stock kernel builtin module names
+        run: |
+          mkdir -p stock/kernel-unpacked
+          git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg /tmp/mkbootimg
+          python3 /tmp/mkbootimg/unpack_bootimg.py --boot_img boot/debug-boot_a.img --out stock/kernel-unpacked >/dev/null 2>&1
+          strings -a stock/kernel-unpacked/kernel > stock/stock-kernel-strings.txt
+          echo "stock kernel strings: $(wc -l < stock/stock-kernel-strings.txt)"
+
+      - name: CLO Image builtin strings
+        run: |
+          strings -a "$CLO_IMAGE" > clo/clo-kernel-strings.txt
+          echo "CLO kernel strings: $(wc -l < clo/clo-kernel-strings.txt)"
+
+      - name: Audit — for each stock vendor .ko: is it builtin in CLO Image?
+        run: |
+          mkdir -p out
+          echo "# Vendor module audit: builtin coverage analysis" > out/audit-report.md
+          echo "" >> out/audit-report.md
+          echo "For each stock vendor .ko, check if the driver is builtin (=y) in the CLO Image." >> out/audit-report.md
+          echo "If builtin → the .ko won't be loaded → no CRC risk." >> out/audit-report.md
+          echo "If NOT builtin → the .ko WILL be loaded → CRC risk (stock .ko vs CLO kernel)." >> out/audit-report.md
+          echo "" >> out/audit-report.md
+          echo "## Summary" >> out/audit-report.md
+          BUILTIN=0
+          MODULE_ONLY=0
+          IN_LOADLIST=0
+          MODULE_ONLY_LIST=""
+          > out/module-only.txt
+          > out/builtin-covered.txt
+          > out/crc-risk.txt
+          while IFS= read -r ko_name; do
+            ko_base="${ko_name%.ko}"
+            IS_BUILTIN=0
+            if grep -q "^${ko_base}\.\|^${ko_base}\b" clo/clo-kernel-strings.txt 2>/dev/null; then
+              IS_BUILTIN=1
+            fi
+            IS_IN_LOADLIST=0
+            if [ -f stock/modules-load-names.txt ] && grep -qx "$ko_name" stock/modules-load-names.txt 2>/dev/null; then
+              IS_IN_LOADLIST=1
+            fi
+            if [ "$IS_BUILTIN" = "1" ]; then
+              BUILTIN=$((BUILTIN + 1))
+              echo "$ko_name" >> out/builtin-covered.txt
+            else
+              MODULE_ONLY=$((MODULE_ONLY + 1))
+              echo "$ko_name" >> out/module-only.txt
+              if [ "$IS_IN_LOADLIST" = "1" ]; then
+                IN_LOADLIST=$((IN_LOADLIST + 1))
+                echo "$ko_name" >> out/crc-risk.txt
+              fi
+            fi
+          done < stock/vendor-ko-names.txt
+          echo "- stock vendor .ko total: $(wc -l < stock/vendor-ko-names.txt)" >> out/audit-report.md
+          echo "- builtin in CLO Image (safe, won't load): $BUILTIN" >> out/audit-report.md
+          echo "- NOT builtin (would load as module): $MODULE_ONLY" >> out/audit-report.md
+          echo "- of those, in modules.load (real CRC risk): $IN_LOADLIST" >> out/audit-report.md
+          echo "" >> out/audit-report.md
+          echo "## CRC Risk modules (in modules.load + NOT builtin)" >> out/audit-report.md
+          echo '```' >> out/audit-report.md
+          cat out/crc-risk.txt >> out/audit-report.md
+          echo '```' >> out/audit-report.md
+          echo "" >> out/audit-report.md
+          echo "## Module-only (NOT builtin, may or may not load)" >> out/audit-report.md
+          echo '```' >> out/audit-report.md
+          cat out/module-only.txt >> out/audit-report.md
+          echo '```' >> out/audit-report.md
+          echo "" >> out/audit-report.md
+          cat out/audit-report.md
+
+      - name: Upload audit report
+        uses: actions/upload-artifact@v7
+        with:
+          name: module-audit
+          path: out/
+          if-no-files-found: error
