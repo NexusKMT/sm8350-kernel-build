@@ -59,12 +59,10 @@ jobs:
       - name: Download AOSP Clang r416183b
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
-          cd prebuilts-master/clang/host/linux-x86
+          mkdir -p prebuilts-master/clang/host/linux-x86/clang-r416183b
           curl -L "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master-kernel-build-2021/clang-r416183b.tar.gz" \
-            | tar xz
-          mv clang-r416183b clang-r416183b_tmp 2>/dev/null || true
-          if [ -d clang-r416183b_tmp ]; then mv clang-r416183b_tmp clang-r416183b; fi
-          ls clang-r416183b/bin/clang && clang-r416183b/bin/clang --version
+            | tar xz -C prebuilts-master/clang/host/linux-x86/clang-r416183b
+          prebuilts-master/clang/host/linux-x86/clang-r416183b/bin/clang --version
 
       - name: Cache aarch64 + arm GCC 4.9
         id: cache-gcc
@@ -78,13 +76,12 @@ jobs:
       - name: Download aarch64 + arm GCC 4.9
         if: steps.cache-gcc.outputs.cache-hit != 'true'
         run: |
-          curl -L "https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/heads/android12L-release.tar.gz" \
-            | tar xz -C prebuilts/gcc/linux-x86/aarch64
-          mv prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 prebuilts/gcc/linux-x86/aarch64/_tmp 2>/dev/null || true
           mkdir -p prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9
-          curl -L "https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/heads/android12L-release.tar.gz" \
-            | tar xz -C prebuilts/gcc/linux-x86/arm
           mkdir -p prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9
+          curl -L "https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/heads/android12L-release.tar.gz" \
+            | tar xz -C prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9
+          curl -L "https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/heads/android12L-release.tar.gz" \
+            | tar xz -C prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9
 
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2.23
