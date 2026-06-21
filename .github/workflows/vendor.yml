@@ -112,13 +112,12 @@ jobs:
           head -5 "vendor-work/lib/modules/${KVER}/modules.dep"
           VENDOR_SIZE=$(stat -c%s stock/vendor_a.img)
           echo "original vendor.img size: $VENDOR_SIZE"
-          WORK_SIZE=$(du -sb vendor-work | cut -f1)
-          echo "vendor-work content size: $WORK_SIZE"
-          BLOCKS=$(( (WORK_SIZE * 12 / 10 + 1048576) / 4096 ))
-          echo "allocating $BLOCKS blocks ($(( BLOCKS * 4096 )) bytes, 20% overhead)"
+          BLOCKS=$(( VENDOR_SIZE / 4096 ))
+          echo "allocating $BLOCKS blocks ($VENDOR_SIZE bytes, fixed = stock partition size)"
           mkdir -p out
           mke2fs -t ext4 -b 4096 -d vendor-work -L vendor "out/vendor-new.img" "$BLOCKS"
           ls -la out/vendor-new.img
+          echo "new vendor.img size: $(stat -c%s out/vendor-new.img)"
 
       - name: Build boot.img (CLO Image + alpha ramdisk + avb pad)
         run: |
