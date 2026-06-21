@@ -169,6 +169,49 @@ jobs:
           echo "=== .ko modules ==="
           find . -name '*.ko' -not -path '*/build/*' 2>/dev/null | wc -l
 
+      - name: Dump full artifact manifest
+        if: always()
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          OUT=$(find out -maxdepth 1 -type d | grep -v '^out$' | head -1)
+          echo "OUT_DIR=$OUT"
+          mkdir -p /tmp/manifest
+
+          echo "=== 1. final .config ==="
+          find "$OUT" -name '.config' 2>/dev/null | head -1 | xargs -I{} cp {} /tmp/manifest/dot-config 2>/dev/null || echo "no .config found"
+          wc -l /tmp/manifest/dot-config 2>/dev/null
+
+          echo "=== 2. all .ko (with full paths) ==="
+          find "$OUT" -name '*.ko' 2>/dev/null > /tmp/manifest/all-ko-paths.txt
+          find "$OUT" -name '*.ko' 2>/dev/null | xargs -n1 basename 2>/dev/null | sort > /tmp/manifest/all-ko-names.txt
+          echo ".ko count: $(wc -l < /tmp/manifest/all-ko-paths.txt)"
+
+          echo "=== 3. Module.symvers ==="
+          find "$OUT" -name Module.symvers 2>/dev/null | head -1 | xargs -I{} cp {} /tmp/manifest/Module.symvers 2>/dev/null
+
+          echo "=== 4. all .dtb ==="
+          find "$OUT" -name '*.dtb' -o -name '*.dtbo' 2>/dev/null | xargs -n1 basename 2>/dev/null | sort > /tmp/manifest/all-dtb-names.txt 2>/dev/null
+          echo "dtb count: $(wc -l < /tmp/manifest/all-dtb-names.txt 2>/dev/null || echo 0)"
+
+          echo "=== 5. .config: CNSS/WLAN/PCI key values ==="
+          grep -iE '^CONFIG_(CNSS|ICNSS|PCI_MSM|ARCH_QCOM|ARCH_LAHAINA|WLAN|CNSS_UTILS)=' /tmp/manifest/dot-config 2>/dev/null > /tmp/manifest/wifi-config.txt || echo "no .config to grep"
+
+          echo "=== 6. .config: builtin(=y) count vs module(=m) count ==="
+          echo "builtin (=y): $(grep -cE '^CONFIG.*=y$' /tmp/manifest/dot-config 2>/dev/null || echo 0)"
+          echo "module (=m):  $(grep -cE '^CONFIG.*=m$' /tmp/manifest/dot-config 2>/dev/null || echo 0)"
+
+          echo "=== 7. modules.load + modules.dep (if exist) ==="
+          find "$OUT" -name 'modules.load' 2>/dev/null | head -1 | xargs -I{} cp {} /tmp/manifest/modules.load 2>/dev/null
+          find "$OUT" -name 'modules.dep' 2>/dev/null | head -1 | xargs -I{} cp {} /tmp/manifest/modules.dep 2>/dev/null
+
+      - name: Upload manifest
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: clo-manifest
+          path: /tmp/manifest/
+          if-no-files-found: warn
+
       - name: Upload Image
         if: always()
         uses: actions/upload-artifact@v7
