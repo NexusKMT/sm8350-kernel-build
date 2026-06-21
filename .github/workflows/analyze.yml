@@ -21,7 +21,6 @@ jobs:
           mkdir -p fw
           gh release download "${{ inputs.vendor_release }}" \
             -R "$GITHUB_REPOSITORY" -D fw -p "*.img" -p "*.img.gz" || true
-          # decompress if gzipped
           [ -f fw/vendor_a.img.gz ] && gunzip -f fw/vendor_a.img.gz
           ls -la fw/
         env:
@@ -33,7 +32,6 @@ jobs:
           path: fw/*.img
           if-no-files-found: error
 
-  # ---- JOB 1: full module inventory (vermagic + modinfo of every .ko) ----
   inventory:
     needs: setup
     runs-on: ubuntu-22.04
@@ -66,7 +64,6 @@ jobs:
         if: always()
         run: sudo umount /mnt/vendor /mnt/odm 2>/dev/null || true
 
-  # ---- JOB 2: CRC analysis (vendor module __versions vs kernel Module.symvers) ----
   crc:
     needs: setup
     runs-on: ubuntu-22.04
@@ -175,7 +172,6 @@ jobs:
         if: always()
         run: sudo umount /mnt/vendor /mnt/odm 2>/dev/null || true
 
-  # ---- JOB 3: load-order dependency graph ----
   load-order:
     needs: setup
     runs-on: ubuntu-22.04
@@ -209,7 +205,6 @@ jobs:
         if: always()
         run: sudo umount /mnt/vendor 2>/dev/null || true
 
-  # ---- JOB 4: vermagic consolidation ----
   vermagic:
     needs: setup
     runs-on: ubuntu-22.04
