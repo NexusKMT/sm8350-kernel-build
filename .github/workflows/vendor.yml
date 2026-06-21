@@ -63,26 +63,22 @@ jobs:
           find clo/modules -name '*.ko' | xargs -n1 basename | sort > clo/clo-ko-names.txt
           cat clo/clo-ko-names.txt | head -20
 
-      - name: Mount stock vendor.img and inventory its modules
+      - name: Mount ro + copy vendor.img to workdir
         run: |
           file stock/vendor_a.img
           sudo mkdir -p /mnt/vendor
-          sudo mount -t ext2 -o loop stock/vendor_a.img /mnt/vendor || {
-            echo "ext2 mount failed, trying with offset..."
-            sudo losetup -f --show -P stock/vendor_a.img 2>/dev/null || true
-            sudo mount -o loop stock/vendor_a.img /mnt/vendor 2>/dev/null || true
-            if ! mountpoint -q /mnt/vendor; then
-              echo "FATAL: cannot mount vendor.img"
-              exit 1
-            fi
-          }
-          sudo find /mnt/vendor -name '*.ko' -printf '%p\n' | sort > stock/stock-ko-paths.txt
+          sudo mount -o loop,ro stock/vendor_a.img /mnt/vendor
+          mkdir -p vendor-work
+          sudo cp -a /mnt/vendor/. vendor-work/
+          sudo umount /mnt/vendor
+          sudo chown -R runner:runner vendor-work
+          find vendor-work -name '*.ko' -printf '%p\n' | sort > stock/stock-ko-paths.txt
           STOCK_KO_COUNT=$(wc -l < stock/stock-ko-paths.txt)
           echo "stock vendor .ko count: $STOCK_KO_COUNT"
-          sudo find /mnt/vendor -name '*.ko' | xargs -n1 sudo basename | sort -u > stock/stock-ko-names.txt
+          find vendor-work -name '*.ko' | xargs -n1 basename | sort -u > stock/stock-ko-names.txt
           head -20 stock/stock-ko-names.txt
 
-      - name: Replace kernel modules in stock vendor (inject .ko)
+      - name: Replace kernel modules in vendor workdir (inject .ko)
         run: |
           echo "=== Module replacement map ==="
           echo "CLO modules: $(wc -l < clo/clo-ko-names.txt)"
@@ -93,8 +89,8 @@ jobs:
             STOCK_PATH=$(grep "/${ko_name}$" stock/stock-ko-paths.txt | head -1)
             CLO_PATH="clo/modules/${ko_name}"
             if [ -n "$STOCK_PATH" ] && [ -f "$CLO_PATH" ]; then
-              sudo cp "$CLO_PATH" "$STOCK_PATH"
-              sudo chmod 644 "$STOCK_PATH"
+              cp "$CLO_PATH" "$STOCK_PATH"
+              chmod 644 "$STOCK_PATH"
               REPLACED=$((REPLACED + 1))
               echo "  REPLACE: $ko_name"
             elif [ -n "$STOCK_PATH" ]; then
@@ -107,22 +103,17 @@ jobs:
           echo "Kept stock (no CLO equivalent):     $KEPT"
           echo "CLO-only (not in stock, skipped):  $(comm -23 clo/clo-ko-names.txt stock/stock-ko-names.txt | wc -l)"
 
-      - name: Regenerate depmod for replaced modules
+      - name: Regenerate depmod + repack vendor.img
         run: |
-          KVER=$(ls /mnt/vendor/lib/modules/ | head -1)
+          KVER=$(ls vendor-work/lib/modules/ | head -1)
           echo "kernel version dir: $KVER"
-          sudo depmod -b /mnt/vendor "$KVER" 2>&1 || echo "depmod warning (expected for cross-arch)"
-          echo "=== modules.dep regenerated ==="
-          sudo head -5 "/mnt/vendor/lib/modules/${KVER}/modules.dep"
-
-      - name: Unmount and repack vendor.img
-        run: |
-          sudo umount /mnt/vendor
+          depmod -b vendor-work "$KVER" 2>&1 || echo "depmod warning (expected for cross-arch)"
+          head -5 "vendor-work/lib/modules/${KVER}/modules.dep"
           VENDOR_SIZE=$(stat -c%s stock/vendor_a.img)
           echo "original vendor.img size: $VENDOR_SIZE"
-          mkuserimg_mke2fs stock/vendor_a.img out/vendor-new.img ext4 vendor "$VENDOR_SIZE" 2>&1 || {
-            echo "mkuserimg_mke2fs failed, trying mke2fs approach"
-            mke2fs -t ext4 -b 4096 -d stock/vendor_a.img -L vendor out/vendor-new.img $((VENDOR_SIZE / 4096)) 2>&1
+          mke2fs -t ext4 -b 4096 -d vendor-work -L vendor out/vendor-new.img $((VENDOR_SIZE / 4096)) 2>&1 || {
+            echo "mke2fs failed, trying mkuserimg_mke2fs"
+            mkuserimg_mke2fs vendor-work out/vendor-new.img ext4 vendor "$VENDOR_SIZE" 2>&1
           }
           ls -la out/vendor-new.img
 
