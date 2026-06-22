@@ -170,23 +170,34 @@ jobs:
           echo "=== Checking Image exists ==="
           find out -name 'Image' -path '*/arch/arm64/boot/*' -type f | head -1 | xargs ls -la
 
-      - name: Package boot.img (CLO Image + alpha ramdisk + AVB pad)
+      - name: Package boot.img (CLO Image + debug ramdisk + AVB pad)
         run: |
+          set -euo pipefail
           cd "$GITHUB_WORKSPACE"
           CLO_IMAGE=$(find out -name 'Image' -path '*/arch/arm64/boot/*' -type f | head -1)
           echo "CLO Image: $CLO_IMAGE ($(stat -c%s "$CLO_IMAGE") bytes)"
           mkdir -p out/dist boot-work
           git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg tools/mkbootimg 2>/dev/null || true
           git clone --depth=1 https://android.googlesource.com/platform/external/avb       tools/avb       2>/dev/null || true
-          python3 tools/mkbootimg/unpack_bootimg.py --boot_img boot/alpha-boot_a.img --out boot-work
+          python3 tools/mkbootimg/unpack_bootimg.py --boot_img boot/debug-boot_a.img --out boot-work
           ls boot-work/
+          mkdir -p boot-work/ramdisk-tree
+          (cd boot-work/ramdisk-tree && gzip -dc ../ramdisk | cpio -idmu)
+          echo "=== debug ramdisk adb/default props ==="
+          grep -E '^(ro.debuggable|ro.adb.secure|persist.sys.usb.config)=' boot-work/ramdisk-tree/prop.default || true
+          mkdir -p /tmp/manifest
+          {
+            echo "boot_base=boot/debug-boot_a.img"
+            echo "cmdline=androidboot.selinux=permissive ignore_loglevel log_buf_len=16M printk.devkmsg=on drm.debug=0x1ff"
+            grep -E '^(ro.debuggable|ro.adb.secure|persist.sys.usb.config)=' boot-work/ramdisk-tree/prop.default || true
+          } > /tmp/manifest/boot-base.txt
           python3 tools/mkbootimg/mkbootimg.py \
             --header_version 3 \
             --os_version 11.0.0 \
             --os_patch_level 2021-01 \
             --kernel "$CLO_IMAGE" \
             --ramdisk boot-work/ramdisk \
-            --cmdline ' androidboot.selinux=permissive' \
+            --cmdline ' androidboot.selinux=permissive ignore_loglevel log_buf_len=16M printk.devkmsg=on drm.debug=0x1ff' \
             -o out/dist/boot-new.img
           python3 tools/avb/avbtool.py add_hash_footer \
             --image out/dist/boot-new.img \
@@ -231,6 +242,52 @@ jobs:
 
           echo "=== 5. .config: CNSS/WLAN/PCI key values ==="
           grep -iE '^CONFIG_(CNSS|ICNSS|PCI_MSM|ARCH_QCOM|ARCH_LAHAINA|WLAN|CNSS_UTILS)=' /tmp/manifest/dot-config 2>/dev/null > /tmp/manifest/wifi-config.txt || echo "no .config to grep"
+
+          echo "=== 5b. .config: USB/touch/haptics/display key values ==="
+          cat > /tmp/manifest/device-config-keys.txt <<'EOF'
+          CONFIG_USB_DWC3
+          CONFIG_USB_DWC3_QCOM
+          CONFIG_USB_DWC3_MSM
+          CONFIG_USB_DWC3_DUAL_ROLE
+          CONFIG_USB_GADGET
+          CONFIG_USB_LIBCOMPOSITE
+          CONFIG_USB_F_FS
+          CONFIG_USB_CONFIGFS
+          CONFIG_USB_CONFIGFS_UEVENT
+          CONFIG_USB_CONFIGFS_F_FS
+          CONFIG_USB_CONFIGFS_F_DIAG
+          CONFIG_USB_CONFIGFS_F_GSI
+          CONFIG_USB_CONFIGFS_F_QDSS
+          CONFIG_USB_ROLE_SWITCH
+          CONFIG_USB_MSM_SSPHY_QMP
+          CONFIG_MSM_HSUSB_PHY
+          CONFIG_NOP_USB_XCEIV
+          CONFIG_TYPEC
+          CONFIG_TYPEC_UCSI
+          CONFIG_UCSI_QTI_GLINK
+          CONFIG_QTI_PMIC_GLINK
+          CONFIG_QTI_ALTMODE_GLINK
+          CONFIG_QCOM_EUD
+          CONFIG_EXTCON
+          CONFIG_EXTCON_USB_GPIO
+          CONFIG_INPUT_QPNP_POWER_ON
+          CONFIG_INPUT_QCOM_HV_HAPTICS
+          CONFIG_TOUCHSCREEN_GOODIX
+          CONFIG_TOUCHSCREEN_GOODIX_I2C
+          CONFIG_TOUCHSCREEN_GOODIX_BRL
+          CONFIG_TOUCHSCREEN_GOODIX_BRL_I2C
+          CONFIG_TOUCHSCREEN_SYNAPTICS_DSX
+          CONFIG_TOUCHSCREEN_FTS
+          CONFIG_TOUCHSCREEN_NT36XXX
+          CONFIG_AW86917_HAPTICS
+          CONFIG_DISPLAY_BUILD
+          CONFIG_DRM_MSM
+          CONFIG_MSM_DRM
+          EOF
+          sed -i 's/^          //' /tmp/manifest/device-config-keys.txt
+          while IFS= read -r key; do
+            grep -E "^(# )?${key}(=| is not set)" /tmp/manifest/dot-config 2>/dev/null || echo "${key}=<absent>"
+          done < /tmp/manifest/device-config-keys.txt > /tmp/manifest/device-config.txt
 
           echo "=== 6. .config: builtin(=y) count vs module(=m) count ==="
           echo "builtin (=y): $(grep -cE '^CONFIG.*=y$' /tmp/manifest/dot-config 2>/dev/null || echo 0)"
