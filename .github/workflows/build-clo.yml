@@ -183,7 +183,7 @@ jobs:
             CONFIG_DISPLAY_BUILD=y CONFIG_DRM_MSM=y CONFIG_DRM_MSM_SDE=y \
             CONFIG_DRM_MSM_DSI=y CONFIG_DRM_MSM_DP=y CONFIG_DRM_MSM_DP_MST=y \
             CONFIG_DRM_SDE_WB=y CONFIG_DRM_SDE_RSC=y CONFIG_DRM_SDE_VM=y \
-            CONFIG_DSI_PARSER=y CONFIG_HDCP_QSEECOM=y CONFIG_DRM_MSM_HDMI_HDCP=y \
+            CONFIG_DSI_PARSER=y \
             techpack/display/msm/built-in.a 2>&1 | tail -30
           echo "=== Display built-in.a done ==="
           # Now re-link vmlinux and Image with the display driver included
