@@ -162,48 +162,29 @@ jobs:
         run: |
           cd "$GITHUB_WORKSPACE"
           # ---- Display driver patches ----
-          # The techpack display driver depends on non-Kconfig symbols (CONFIG_QGKI,
-          # CONFIG_DISPLAY_BUILD, CONFIG_DRM_MSM_SDE, etc.) that are set by
-          # lahainadisp.conf via Makefile 'export', but auto.conf's := assignment
-          # overrides them to empty. Bypass by hardcoding obj-y and all sub-object
-          # variables that lahainadisp.conf would normally set.
+          # The techpack display driver is controlled by techpack/display/msm/Makefile
+          # which uses CONFIG_DISPLAY_BUILD, CONFIG_DRM_MSM_SDE, etc. from
+          # lahainadisp.conf. These are Makefile export variables, not Kconfig symbols.
+          # The conf file's export DOES work (diagnostic confirmed DRM_MSM_SDE=y,
+          # DRM_MSM=y, DISPLAY_BUILD=y during the actual build), but the driver
+          # still doesn't compile. The issue is likely that Make caches rules from
+          # the first pass (defconfig) where all variables are empty, and doesn't
+          # re-evaluate obj-* lines on the second pass (actual build).
+          #
+          # Solution: disable the in-tree DRM driver, then directly invoke make
+          # for the display driver after build.sh completes.
           DM="kernel/msm-5.4/techpack/display/Makefile"
           SMM="kernel/msm-5.4/techpack/display/msm/Makefile"
-          # 1. Force QGKI config path
-          sed -i 's/ifeq (\$(CONFIG_QGKI), y)/ifeq (y, y)/' "$DM"
-          # 2. Unconditionally enter msm/ subdirectory
-          sed -i 's|^obj-$(CONFIG_DRM_MSM)\s*+= msm/|obj-y += msm/|' "$DM"
-          # 3. Unconditionally compile msm_drm.o + all sub-objects
-          sed -i 's|^obj-$(CONFIG_DISPLAY_BUILD)\s*+=|obj-y +=|' "$SMM"
-          # Replace msm_drm-$(CONFIG_*) patterns with msm_drm-y, but ONLY for
-          # the core display components that are needed for basic display output.
-          # Exclude optional components that conflict with kernel headers:
-          #   DP_USBPD_LEGACY (conflicts with typec.h/usbpd.h)
-          #   MSM_SDE_ROTATOR (conflicts with inline stubs)
-          #   HDCP_QSEECOM (requires QSEE firmware)
-          #   DRM_FBDEV_EMULATION (not needed, DRM_MSM already handled)
-          # First neutralize all optional configs (set to empty)
-          perl -pi -e 's/msm_drm-\$\(CONFIG_(?:DRM_MSM_DP_USBPD_LEGACY|MSM_SDE_ROTATOR|DRM_FBDEV_EMULATION|DRM_MSM_HDMI_HDCP)\)/msm_drm-/g' "$SMM"
-          # Then force core configs to =y (use single quotes to avoid bash expansion)
-          perl -pi -e 's/msm_drm-\$\(CONFIG_DRM_MSM_SDE\)/msm_drm-y/g' "$SMM"
-          perl -pi -e 's/msm_drm-\$\(CONFIG_DRM_MSM_DSI\)/msm_drm-y/g' "$SMM"
-          perl -pi -e 's/msm_drm-\$\(CONFIG_DRM_MSM_DP\)/msm_drm-y/g' "$SMM"
-          perl -pi -e 's/msm_drm-\$\(CONFIG_DRM_MSM_DP_MST\)/msm_drm-y/g' "$SMM"
-          perl -pi -e 's/msm_drm-\$\(CONFIG_DRM_SDE_WB\)/msm_drm-y/g' "$SMM"
-          perl -pi -e 's/msm_drm-\$\(CONFIG_DRM_SDE_RSC\)/msm_drm-y/g' "$SMM"
-          perl -pi -e 's/msm_drm-\$\(CONFIG_DRM_SDE_VM\)/msm_drm-y/g' "$SMM"
-          perl -pi -e 's/msm_drm-\$\(CONFIG_DSI_PARSER\)/msm_drm-y/g' "$SMM"
-          perl -pi -e 's/msm_drm-\$\(CONFIG_DRM_MSM\)/msm_drm-y/g' "$SMM"
-          perl -pi -e 's/msm_drm-\$\(CONFIG_HDCP_QSEECOM\)/msm_drm-y/g' "$SMM"
-          # 4. Disable in-tree DRM driver to avoid duplicate symbols
-          sed -i 's|^obj-$(CONFIG_DRM_MSM)\s*+= msm/|# disabled: techpack display replaces this|' kernel/msm-5.4/drivers/gpu/drm/Makefile
-          # Diagnostic: add $(warning) to both Makefiles to confirm they're processed
-          sed -i '1a\$(warning [DISPLAY-MK] ARCH_LAHAINA=$(CONFIG_ARCH_LAHAINA) DRM_MSM=$(CONFIG_DRM_MSM) DISPLAY_BUILD=$(CONFIG_DISPLAY_BUILD))' "$DM"
-          sed -i '1a\$(warning [MSM-MK] DRM_MSM_SDE=$(CONFIG_DRM_MSM_SDE) DRM_MSM=$(CONFIG_DRM_MSM) DISPLAY_BUILD=$(CONFIG_DISPLAY_BUILD))' "$SMM"
-          echo "=== Verify display/Makefile (first 80 lines) ==="
-          head -80 "$DM" | grep -n 'obj-\|ifeq\|include\|warning'
-          echo "=== Verify msm/Makefile (all CONFIG_ lines) ==="
-          grep -n 'CONFIG_' "$SMM" | head -20
+          # Disable in-tree DRM driver
+          sed -i 's|^obj-\$(CONFIG_DRM_MSM)\s*+= msm/|# disabled: techpack display replaces this|' kernel/msm-5.4/drivers/gpu/drm/Makefile
+          # Add diagnostic at end of file (after obj- lines)
+          echo '$(warning [DISPLAY-END] obj-y=$(obj-y) DRM_MSM=$(CONFIG_DRM_MSM))' >> "$DM"
+          echo "=== Verify display/Makefile first 25 lines ==="
+          head -25 "$DM"
+          echo "=== Verify lahainadisp.conf DRM_MSM ==="
+          grep 'DRM_MSM' kernel/msm-5.4/techpack/display/config/lahainadisp.conf
+          echo "=== Verify lahainadisp.conf DISPLAY_BUILD ==="
+          grep 'DISPLAY_BUILD' kernel/msm-5.4/techpack/display/config/lahainadisp.conf
           echo "=== Verify in-tree DRM disabled ==="
           grep 'msm' kernel/msm-5.4/drivers/gpu/drm/Makefile | head -3
           BUILD_CONFIG=kernel/msm-5.4/build.config.msm.lahaina \
