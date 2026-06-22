@@ -177,8 +177,9 @@ jobs:
           SMM="kernel/msm-5.4/techpack/display/msm/Makefile"
           # Disable in-tree DRM driver
           sed -i 's|^obj-\$(CONFIG_DRM_MSM)\s*+= msm/|# disabled: techpack display replaces this|' kernel/msm-5.4/drivers/gpu/drm/Makefile
-          # Add diagnostic at end of file (after obj- lines)
-          echo '$(warning [DISPLAY-END] obj-y=$(obj-y) DRM_MSM=$(CONFIG_DRM_MSM))' >> "$DM"
+          # Add shell-based diagnostic (unconditional, bypasses Make variable issues)
+          echo '$(shell echo "[DISPLAY-SHELL] obj-y=$(obj-y) DRM_MSM=$(CONFIG_DRM_MSM)" > /tmp/display-diag.txt)' >> "$DM"
+          echo '$(shell echo "[DISPLAY-SHELL-END] msm_drm-y entries: $(words $(msm_drm-y))" >> /tmp/display-diag.txt)' >> "$SMM"
           echo "=== Verify display/Makefile first 25 lines ==="
           head -25 "$DM"
           echo "=== Verify lahainadisp.conf DRM_MSM ==="
@@ -193,6 +194,8 @@ jobs:
           MAKE_GOALS="Image dtbs" \
           CC="ccache clang" \
           build/build.sh || true
+          echo "=== Display diagnostic ==="
+          cat /tmp/display-diag.txt 2>/dev/null || echo "No display diagnostic file"
           echo "=== Checking Image exists ==="
           find out -name 'Image' -path '*/arch/arm64/boot/*' -type f | head -1 | xargs ls -la
 
