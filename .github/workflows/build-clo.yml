@@ -175,8 +175,8 @@ jobs:
           grep 'CONFIG_DRM_MSM=' "$OUT/.config" | head -3
           # Add clang/gcc to PATH (build.sh sets this internally)
           export PATH="$GITHUB_WORKSPACE/prebuilts-master/clang/host/linux-x86/clang-r416183b/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin:$PATH"
-          # Rebuild Image with display driver via command-line config overrides
-          # Command-line variables override auto.conf's := assignment
+          # First, build the display driver's built-in.a
+          # Use -C to point to source tree, O= for output, and command-line overrides
           make -C kernel/msm-5.4 O="$GITHUB_WORKSPACE/$OUT" \
             CC="ccache clang" HOSTCC="ccache clang" \
             LD=ld.lld HOSTLD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy \
@@ -184,8 +184,14 @@ jobs:
             CONFIG_DRM_MSM_DSI=y CONFIG_DRM_MSM_DP=y CONFIG_DRM_MSM_DP_MST=y \
             CONFIG_DRM_SDE_WB=y CONFIG_DRM_SDE_RSC=y CONFIG_DRM_SDE_VM=y \
             CONFIG_DSI_PARSER=y CONFIG_HDCP_QSEECOM=y CONFIG_DRM_MSM_HDMI_HDCP=y \
-            Image dtbs 2>&1 | tail -30
-          echo "=== Rebuild done ==="
+            techpack/display/msm/built-in.a 2>&1 | tail -30
+          echo "=== Display built-in.a done ==="
+          # Now re-link vmlinux and Image with the display driver included
+          make -C kernel/msm-5.4 O="$GITHUB_WORKSPACE/$OUT" \
+            CC="ccache clang" HOSTCC="ccache clang" \
+            LD=ld.lld HOSTLD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy \
+            Image dtbs 2>&1 | tail -10
+          echo "=== Re-link done ==="
           echo "=== Checking Image exists ==="
           find out -name 'Image' -path '*/arch/arm64/boot/*' -type f | head -1 | xargs ls -la
 
