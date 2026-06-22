@@ -182,17 +182,26 @@ jobs:
           #   MSM_SDE_ROTATOR (conflicts with inline stubs)
           #   HDCP_QSEECOM (requires QSEE firmware)
           #   DRM_FBDEV_EMULATION (not needed, DRM_MSM already handled)
-          CORE_CONFIGS="DRM_MSM_SDE|DRM_MSM_DSI|DRM_MSM_DP$|DRM_MSM_DP_MST|DRM_SDE_WB|DRM_SDE_RSC|DRM_SDE_VM|DSI_PARSER|DRM_MSM$|HDCP_QSEECOM"
           # First neutralize all optional configs (set to empty)
-          # Neutralize only the truly conflicting optional components.
           perl -pi -e 's/msm_drm-\$\(CONFIG_(?:DRM_MSM_DP_USBPD_LEGACY|MSM_SDE_ROTATOR|DRM_FBDEV_EMULATION|DRM_MSM_HDMI_HDCP)\)/msm_drm-/g' "$SMM"
-          # Then force core configs to =y
-          perl -pi -e "s/msm_drm-\\\$\((?:$CORE_CONFIGS)\)/msm_drm-y/g" "$SMM"
+          # Then force core configs to =y (use single quotes to avoid bash expansion)
+          perl -pi -e 's/msm_drm-\$\(CONFIG_DRM_MSM_SDE\)/msm_drm-y/g' "$SMM"
+          perl -pi -e 's/msm_drm-\$\(CONFIG_DRM_MSM_DSI\)/msm_drm-y/g' "$SMM"
+          perl -pi -e 's/msm_drm-\$\(CONFIG_DRM_MSM_DP\)/msm_drm-y/g' "$SMM"
+          perl -pi -e 's/msm_drm-\$\(CONFIG_DRM_MSM_DP_MST\)/msm_drm-y/g' "$SMM"
+          perl -pi -e 's/msm_drm-\$\(CONFIG_DRM_SDE_WB\)/msm_drm-y/g' "$SMM"
+          perl -pi -e 's/msm_drm-\$\(CONFIG_DRM_SDE_RSC\)/msm_drm-y/g' "$SMM"
+          perl -pi -e 's/msm_drm-\$\(CONFIG_DRM_SDE_VM\)/msm_drm-y/g' "$SMM"
+          perl -pi -e 's/msm_drm-\$\(CONFIG_DSI_PARSER\)/msm_drm-y/g' "$SMM"
+          perl -pi -e 's/msm_drm-\$\(CONFIG_DRM_MSM\)/msm_drm-y/g' "$SMM"
+          perl -pi -e 's/msm_drm-\$\(CONFIG_HDCP_QSEECOM\)/msm_drm-y/g' "$SMM"
           # 4. Disable in-tree DRM driver to avoid duplicate symbols
           sed -i 's|^obj-$(CONFIG_DRM_MSM)\s*+= msm/|# disabled: techpack display replaces this|' kernel/msm-5.4/drivers/gpu/drm/Makefile
-          echo "=== Verify patches ==="
+          echo "=== Verify display/Makefile ==="
           grep -n 'obj-\|msm_drm-' "$DM" | grep -i 'msm\|display'
-          grep -n 'obj-y\|msm_drm-y' "$SMM" | head -10
+          echo "=== Verify msm/Makefile (all CONFIG_ lines) ==="
+          grep -n 'CONFIG_' "$SMM" | head -20
+          echo "=== Verify in-tree DRM disabled ==="
           grep 'msm' kernel/msm-5.4/drivers/gpu/drm/Makefile | head -3
           BUILD_CONFIG=kernel/msm-5.4/build.config.msm.lahaina \
           KERNEL_DIR=kernel/msm-5.4 \
