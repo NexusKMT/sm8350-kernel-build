@@ -175,9 +175,18 @@ jobs:
           sed -i 's|^obj-$(CONFIG_DRM_MSM)\s*+= msm/|obj-y += msm/|' "$DM"
           # 3. Unconditionally compile msm_drm.o + all sub-objects
           sed -i 's|^obj-$(CONFIG_DISPLAY_BUILD)\s*+=|obj-y +=|' "$SMM"
-          # Replace msm_drm-$(CONFIG_*) patterns with msm_drm-y, but EXCLUDE
-          # DP_USBPD_LEGACY (conflicts with kernel typec.h enums and usbpd.h)
-          perl -pi -e 's/msm_drm-\$\(CONFIG_DRM_MSM_DP_USBPD_LEGACY\)/msm_drm-/; s/msm_drm-\$\(CONFIG_\w+\)/msm_drm-y/g' "$SMM"
+          # Replace msm_drm-$(CONFIG_*) patterns with msm_drm-y, but ONLY for
+          # the core display components that are needed for basic display output.
+          # Exclude optional components that conflict with kernel headers:
+          #   DP_USBPD_LEGACY (conflicts with typec.h/usbpd.h)
+          #   MSM_SDE_ROTATOR (conflicts with inline stubs)
+          #   HDCP_QSEECOM (requires QSEE firmware)
+          #   DRM_FBDEV_EMULATION (not needed, DRM_MSM already handled)
+          CORE_CONFIGS="DRM_MSM_SDE|DRM_MSM_DSI|DRM_MSM_DP$|DRM_MSM_DP_MST|DRM_SDE_WB|DRM_SDE_RSC|DRM_SDE_VM|DSI_PARSER|DRM_MSM$|DRM_MSM_HDMI_HDCP"
+          # First neutralize all optional configs (set to empty)
+          perl -pi -e 's/msm_drm-\$\(CONFIG_(?:DRM_MSM_DP_USBPD_LEGACY|MSM_SDE_ROTATOR|HDCP_QSEECOM|DRM_FBDEV_EMULATION)\)/msm_drm-/g' "$SMM"
+          # Then force core configs to =y
+          perl -pi -e "s/msm_drm-\\\$\((?:$CORE_CONFIGS)\)/msm_drm-y/g" "$SMM"
           # 4. Disable in-tree DRM driver to avoid duplicate symbols
           sed -i 's|^obj-$(CONFIG_DRM_MSM)\s*+= msm/|# disabled: techpack display replaces this|' kernel/msm-5.4/drivers/gpu/drm/Makefile
           echo "=== Verify patches ==="
