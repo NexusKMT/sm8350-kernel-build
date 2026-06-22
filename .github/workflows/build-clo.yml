@@ -169,23 +169,15 @@ jobs:
           VARIANT=qgki-debug \
           MAKE_GOALS="Image dtbs" \
           CC="ccache clang" \
-          # Inject display driver build into build.sh before the final make Image
-          # This ensures the display driver is compiled in the same build pass
-          # (avoiding mrproper cleanup between separate make invocations)
-          sed -i '/make -s O=\${OUT_DIR}.*MAKE_GOALS/i\
-          # Build display driver with command-line config overrides\
-          echo "=== Building display driver ==="\
-          make -s "\${TOOL_ARGS[@]}" O="\${OUT_DIR}" "\${MAKE_ARGS[@]}" \\\
-            CONFIG_DISPLAY_BUILD=y CONFIG_DRM_MSM=y CONFIG_DRM_MSM_SDE=y \\\
-            CONFIG_DRM_MSM_DSI=y CONFIG_DRM_MSM_DP=y CONFIG_DRM_MSM_DP_MST=y \\\
-            CONFIG_DRM_SDE_WB=y CONFIG_DRM_SDE_RSC=y CONFIG_DRM_SDE_VM=y \\\
-            CONFIG_DSI_PARSER=y \\\
-            techpack/display/msm/built-in.a \\\
-            || echo "WARNING: display driver build failed, continuing"\
-          echo "=== Display driver build done ==="
-          ' build/build.sh
+          # Inject display driver build into build.sh
+          python3 scripts/inject-display-build.py
           echo "=== Verify injection ==="
           grep -c 'Building display driver' build/build.sh
+          BUILD_CONFIG=kernel/msm-5.4/build.config.msm.lahaina \
+          KERNEL_DIR=kernel/msm-5.4 \
+          VARIANT=qgki-debug \
+          MAKE_GOALS="Image dtbs" \
+          CC="ccache clang" \
           build/build.sh || true
           echo "=== Checking Image exists ==="
           find out -name 'Image' -path '*/arch/arm64/boot/*' -type f | head -1 | xargs ls -la
