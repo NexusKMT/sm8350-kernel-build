@@ -158,8 +158,8 @@ jobs:
           max-size: 2G
 
       - name: Build kernel (official build.sh, all-builtin)
-        continue-on-error: true
         run: |
+          set -euo pipefail
           cd "$GITHUB_WORKSPACE"
           # Disable in-tree DRM driver (drivers/gpu/drm/msm/) to avoid duplicate symbols
           # with the techpack display driver (techpack/display/msm/)
@@ -167,7 +167,7 @@ jobs:
           BUILD_CONFIG=kernel/msm-5.4/build.config.msm.lahaina \
           KERNEL_DIR=kernel/msm-5.4 \
           VARIANT=qgki-debug \
-          MAKE_GOALS="Image dtbs" \
+          MAKE_GOALS="Image dtbs modules" \
           CC="ccache clang" \
           # Inject display driver config into .config via build.sh patch
           python3 scripts/inject-display-build.py
@@ -176,17 +176,20 @@ jobs:
           BUILD_CONFIG=kernel/msm-5.4/build.config.msm.lahaina \
           KERNEL_DIR=kernel/msm-5.4 \
           VARIANT=qgki-debug \
-          MAKE_GOALS="Image dtbs" \
+          MAKE_GOALS="Image dtbs modules" \
           CC="ccache clang" \
-          build/build.sh || true
+          build/build.sh
           echo "=== Checking Image exists ==="
-          find out -name 'Image' -path '*/arch/arm64/boot/*' -type f | head -1 | xargs ls -la
+          CLO_IMAGE=$(find out -name 'Image' -path '*/arch/arm64/boot/*' -type f -print -quit)
+          test -n "$CLO_IMAGE"
+          ls -la "$CLO_IMAGE"
 
       - name: Package boot.img (CLO Image + debug ramdisk + AVB pad)
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE"
-          CLO_IMAGE=$(find out -name 'Image' -path '*/arch/arm64/boot/*' -type f | head -1)
+          CLO_IMAGE=$(find out -name 'Image' -path '*/arch/arm64/boot/*' -type f -print -quit)
+          test -n "$CLO_IMAGE"
           echo "CLO Image: $CLO_IMAGE ($(stat -c%s "$CLO_IMAGE") bytes)"
           mkdir -p out/dist boot-work
           git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg tools/mkbootimg 2>/dev/null || true
