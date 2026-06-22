@@ -180,6 +180,19 @@ jobs:
           grep 'msm' kernel/msm-5.4/drivers/gpu/drm/Makefile | head -3
           echo "=== Verify build.sh injection ==="
           grep -n 'DRM_MSM' build/build.sh | head -5
+          # The techpack display conf file (lahainadisp.conf) sets many non-Kconfig
+          # variables that are NOT in auto.conf. Setting them as env vars ensures
+          # they're available to Make even if the conf file inclusion fails.
+          # These are the variables from lahainadisp.conf with DISPLAY_BUILD=y (CI sed).
+          export CONFIG_DRM_MSM_SDE=y
+          export CONFIG_DRM_MSM_DP=y
+          export CONFIG_DRM_MSM_DP_MST=y
+          export CONFIG_DRM_SDE_WB=y
+          export CONFIG_QCOM_MDSS_PLL=y
+          export CONFIG_DRM_SDE_RSC=y
+          export CONFIG_DSI_PARSER=y
+          export CONFIG_DRM_SDE_VM=y
+          export CONFIG_DISPLAY_BUILD=y
           BUILD_CONFIG=kernel/msm-5.4/build.config.msm.lahaina \
           KERNEL_DIR=kernel/msm-5.4 \
           VARIANT=qgki-debug \
