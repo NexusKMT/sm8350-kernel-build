@@ -182,7 +182,8 @@ jobs:
           python3 tools/mkbootimg/unpack_bootimg.py --boot_img boot/debug-boot_a.img --out boot-work
           ls boot-work/
           mkdir -p boot-work/ramdisk-tree
-          (cd boot-work/ramdisk-tree && gzip -dc ../ramdisk | cpio -idmu)
+          # cpio may warn on Magisk .backup/ files (Permission denied) — harmless
+          (cd boot-work/ramdisk-tree && gzip -dc ../ramdisk | cpio -idmu) || true
           echo "=== debug ramdisk adb/default props ==="
           grep -E '^(ro.debuggable|ro.adb.secure|persist.sys.usb.config)=' boot-work/ramdisk-tree/prop.default || true
           mkdir -p /tmp/manifest
