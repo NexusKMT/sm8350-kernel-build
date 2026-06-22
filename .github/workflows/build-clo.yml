@@ -197,8 +197,11 @@ jobs:
           perl -pi -e 's/msm_drm-\$\(CONFIG_HDCP_QSEECOM\)/msm_drm-y/g' "$SMM"
           # 4. Disable in-tree DRM driver to avoid duplicate symbols
           sed -i 's|^obj-$(CONFIG_DRM_MSM)\s*+= msm/|# disabled: techpack display replaces this|' kernel/msm-5.4/drivers/gpu/drm/Makefile
-          echo "=== Verify display/Makefile ==="
-          grep -n 'obj-\|msm_drm-' "$DM" | grep -i 'msm\|display'
+          # Diagnostic: add $(warning) to both Makefiles to confirm they're processed
+          sed -i '1a\$(warning [DISPLAY-MK] ARCH_LAHAINA=$(CONFIG_ARCH_LAHAINA) DRM_MSM=$(CONFIG_DRM_MSM) DISPLAY_BUILD=$(CONFIG_DISPLAY_BUILD))' "$DM"
+          sed -i '1a\$(warning [MSM-MK] DRM_MSM_SDE=$(CONFIG_DRM_MSM_SDE) DRM_MSM=$(CONFIG_DRM_MSM) DISPLAY_BUILD=$(CONFIG_DISPLAY_BUILD))' "$SMM"
+          echo "=== Verify display/Makefile (first 80 lines) ==="
+          head -80 "$DM" | grep -n 'obj-\|ifeq\|include\|warning'
           echo "=== Verify msm/Makefile (all CONFIG_ lines) ==="
           grep -n 'CONFIG_' "$SMM" | head -20
           echo "=== Verify in-tree DRM disabled ==="
