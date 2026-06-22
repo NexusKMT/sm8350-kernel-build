@@ -177,25 +177,27 @@ jobs:
           SMM="kernel/msm-5.4/techpack/display/msm/Makefile"
           # Disable in-tree DRM driver
           sed -i 's|^obj-\$(CONFIG_DRM_MSM)\s*+= msm/|# disabled: techpack display replaces this|' kernel/msm-5.4/drivers/gpu/drm/Makefile
-          # Add shell-based diagnostic (unconditional, bypasses Make variable issues)
-          echo '$(shell echo "[DISPLAY-SHELL] obj-y=$(obj-y) DRM_MSM=$(CONFIG_DRM_MSM)" > /tmp/display-diag.txt)' >> "$DM"
-          echo '$(shell echo "[DISPLAY-SHELL-END] msm_drm-y entries: $(words $(msm_drm-y))" >> /tmp/display-diag.txt)' >> "$SMM"
-          echo "=== Verify display/Makefile first 25 lines ==="
-          head -25 "$DM"
-          echo "=== Verify lahainadisp.conf DRM_MSM ==="
-          grep 'DRM_MSM' kernel/msm-5.4/techpack/display/config/lahainadisp.conf
-          echo "=== Verify lahainadisp.conf DISPLAY_BUILD ==="
-          grep 'DISPLAY_BUILD' kernel/msm-5.4/techpack/display/config/lahainadisp.conf
-          echo "=== Verify in-tree DRM disabled ==="
-          grep 'msm' kernel/msm-5.4/drivers/gpu/drm/Makefile | head -3
           BUILD_CONFIG=kernel/msm-5.4/build.config.msm.lahaina \
           KERNEL_DIR=kernel/msm-5.4 \
           VARIANT=qgki-debug \
           MAKE_GOALS="Image dtbs" \
           CC="ccache clang" \
           build/build.sh || true
-          echo "=== Display diagnostic ==="
-          cat /tmp/display-diag.txt 2>/dev/null || echo "No display diagnostic file"
+          echo "=== build.sh done, now manually build display driver ==="
+          OUT=out/msm-5.4-lahaina-qgki-debug/kernel/msm-5.4
+          # Verify .config has DRM_MSM
+          grep 'CONFIG_DRM_MSM=' "$OUT/.config" | head -3
+          # Build display driver directly with command-line config overrides
+          cd "$GITHUB_WORKSPACE"
+          make -s -C kernel/msm-5.4 O="$GITHUB_WORKSPACE/$OUT" \
+            CC="ccache clang" HOSTCC="ccache clang" \
+            LD=ld.lld HOSTLD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy \
+            CONFIG_DISPLAY_BUILD=y CONFIG_DRM_MSM=y CONFIG_DRM_MSM_SDE=y \
+            CONFIG_DRM_MSM_DSI=y CONFIG_DRM_MSM_DP=y CONFIG_DRM_MSM_DP_MST=y \
+            CONFIG_DRM_SDE_WB=y CONFIG_DRM_SDE_RSC=y CONFIG_DRM_SDE_VM=y \
+            CONFIG_DSI_PARSER=y CONFIG_HDCP_QSEECOM=y CONFIG_DRM_MSM_HDMI_HDCP=y \
+            techpack/display/msm/built-in.a 2>&1 | tail -30
+          echo "=== Display build done ==="
           echo "=== Checking Image exists ==="
           find out -name 'Image' -path '*/arch/arm64/boot/*' -type f | head -1 | xargs ls -la
 
