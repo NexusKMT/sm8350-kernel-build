@@ -163,19 +163,32 @@ jobs:
           cd "$GITHUB_WORKSPACE"
           # ---- Display driver patches ----
           # The techpack display driver depends on non-Kconfig symbols (CONFIG_QGKI,
-          # CONFIG_DISPLAY_BUILD) that are not in auto.conf and whose export from .conf
-          # files doesn't propagate through Kbuild sub-makes. Bypass entirely:
-          # 1. Force QGKI config path in display Makefile
-          sed -i 's/ifeq (\$(CONFIG_QGKI), y)/ifeq (y, y)/' kernel/msm-5.4/techpack/display/Makefile
-          # 2. Unconditionally enter msm/ subdirectory (bypass CONFIG_DRM_MSM gate)
-          sed -i 's|^obj-$(CONFIG_DRM_MSM)\s*+= msm/|obj-y += msm/ # forced: was obj-$(CONFIG_DRM_MSM)|' kernel/msm-5.4/techpack/display/Makefile
-          # 3. Unconditionally compile msm_drm.o (bypass CONFIG_DISPLAY_BUILD gate)
-          sed -i 's|^obj-$(CONFIG_DISPLAY_BUILD)\s*+=|obj-y += # forced: was obj-$(CONFIG_DISPLAY_BUILD)|' kernel/msm-5.4/techpack/display/msm/Makefile
-          # 4. Disable in-tree DRM driver (drivers/gpu/drm/msm/) to avoid duplicate symbols
-          sed -i 's|^obj-$(CONFIG_DRM_MSM)\s*+= msm/|# obj-$(CONFIG_DRM_MSM) += msm/ # disabled: techpack display replaces this|' kernel/msm-5.4/drivers/gpu/drm/Makefile
+          # CONFIG_DISPLAY_BUILD, CONFIG_DRM_MSM_SDE, etc.) that are set by
+          # lahainadisp.conf via Makefile 'export', but auto.conf's := assignment
+          # overrides them to empty. Bypass by hardcoding obj-y and all sub-object
+          # variables that lahainadisp.conf would normally set.
+          DM="kernel/msm-5.4/techpack/display/Makefile"
+          SMM="kernel/msm-5.4/techpack/display/msm/Makefile"
+          # 1. Force QGKI config path
+          sed -i 's/ifeq (\$(CONFIG_QGKI), y)/ifeq (y, y)/' "$DM"
+          # 2. Unconditionally enter msm/ subdirectory
+          sed -i 's|^obj-$(CONFIG_DRM_MSM)\s*+= msm/|obj-y += msm/|' "$DM"
+          # 3. Unconditionally compile msm_drm.o + all sub-objects
+          sed -i 's|^obj-$(CONFIG_DISPLAY_BUILD)\s*+=|obj-y +=|' "$SMM"
+          sed -i 's|msm_drm-\$(CONFIG_DRM_MSM_DP)\b|msm_drm-y|g' "$SMM"
+          sed -i 's|msm_drm-\$(CONFIG_DRM_MSM_DP_MST)\b|msm_drm-y|g' "$SMM"
+          sed -i 's|msm_drm-\$(CONFIG_DRM_MSM_SDE)\b|msm_drm-y|g' "$SMM"
+          sed -i 's|msm_drm-\$(CONFIG_DRM_SDE_VM)\b|msm_drm-y|g' "$SMM"
+          sed -i 's|msm_drm-\$(CONFIG_DRM_SDE_WB)\b|msm_drm-y|g' "$SMM"
+          sed -i 's|msm_drm-\$(CONFIG_DRM_SDE_RSC)\b|msm_drm-y|g' "$SMM"
+          sed -i 's|msm_drm-\$(CONFIG_DRM_MSM_DSI)\b|msm_drm-y|g' "$SMM"
+          sed -i 's|msm_drm-\$(CONFIG_DSI_PARSER)\b|msm_drm-y|g' "$SMM"
+          sed -i 's|msm_drm-\$(CONFIG_DRM_MSM)\b|msm_drm-y|g' "$SMM"
+          # 4. Disable in-tree DRM driver to avoid duplicate symbols
+          sed -i 's|^obj-$(CONFIG_DRM_MSM)\s*+= msm/|# disabled: techpack display replaces this|' kernel/msm-5.4/drivers/gpu/drm/Makefile
           echo "=== Verify patches ==="
-          grep -n 'obj-' kernel/msm-5.4/techpack/display/Makefile | grep -i 'msm\|display'
-          grep -n 'obj-' kernel/msm-5.4/techpack/display/msm/Makefile | head -3
+          grep -n 'obj-\|msm_drm-' "$DM" | grep -i 'msm\|display'
+          grep -n 'obj-y\|msm_drm-y' "$SMM" | head -10
           grep 'msm' kernel/msm-5.4/drivers/gpu/drm/Makefile | head -3
           BUILD_CONFIG=kernel/msm-5.4/build.config.msm.lahaina \
           KERNEL_DIR=kernel/msm-5.4 \
