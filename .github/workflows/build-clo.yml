@@ -206,6 +206,8 @@ jobs:
             --partition_name boot
           ls -la out/dist/boot-new.img
           echo "boot.img size: $(stat -c%s out/dist/boot-new.img) bytes"
+          # Clean up extracted ramdisk-tree (Magisk dirs have restrictive perms)
+          rm -rf boot-work/ramdisk-tree
 
       - name: Locate outputs
         run: |
