@@ -175,8 +175,9 @@ jobs:
           sed -i 's|^obj-$(CONFIG_DRM_MSM)\s*+= msm/|obj-y += msm/|' "$DM"
           # 3. Unconditionally compile msm_drm.o + all sub-objects
           sed -i 's|^obj-$(CONFIG_DISPLAY_BUILD)\s*+=|obj-y +=|' "$SMM"
-          # Replace ALL msm_drm-$(...) patterns with msm_drm-y using perl (handles $ properly)
-          perl -pi -e 's/msm_drm-\$\(CONFIG_\w+\)/msm_drm-y/g' "$SMM"
+          # Replace msm_drm-$(CONFIG_*) patterns with msm_drm-y, but EXCLUDE
+          # DP_USBPD_LEGACY (conflicts with kernel typec.h enums and usbpd.h)
+          perl -pi -e 's/msm_drm-\$\(CONFIG_DRM_MSM_DP_USBPD_LEGACY\)/msm_drm-/; s/msm_drm-\$\(CONFIG_\w+\)/msm_drm-y/g' "$SMM"
           # 4. Disable in-tree DRM driver to avoid duplicate symbols
           sed -i 's|^obj-$(CONFIG_DRM_MSM)\s*+= msm/|# disabled: techpack display replaces this|' kernel/msm-5.4/drivers/gpu/drm/Makefile
           echo "=== Verify patches ==="
