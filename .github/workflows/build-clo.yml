@@ -171,6 +171,12 @@ jobs:
           # Force display driver compilation
           sed -i 's|^obj-\$(CONFIG_DISPLAY_BUILD)\s*+=|obj-y +=|' "$SMM"
           sed -i 's|^obj-\$(CONFIG_DRM_MSM)\s*+= msm/|obj-y += msm/|' "$DM"
+          # Force all msm_drm sub-objects (CONFIG_* variables are empty in auto.conf)
+          perl -pi -e 's/msm_drm-\$\(CONFIG_\w+\)/msm_drm-y/g' "$SMM"
+          # Restore conflicting optional components to empty
+          perl -pi -e 's/msm_drm-y =\s*$/msm_drm-/g' "$SMM"  # noop
+          echo "=== Verify msm/Makefile ==="
+          grep -n 'msm_drm-y\|msm_drm-\$' "$SMM" | head -10
           echo "=== Verify patches ==="
           grep -n 'obj-y\|obj-\$' "$DM" | grep -i 'msm\|display'
           grep -n 'obj-y\|obj-\$' "$SMM" | head -3
