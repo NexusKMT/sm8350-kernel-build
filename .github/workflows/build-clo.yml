@@ -182,9 +182,9 @@ jobs:
           #   MSM_SDE_ROTATOR (conflicts with inline stubs)
           #   HDCP_QSEECOM (requires QSEE firmware)
           #   DRM_FBDEV_EMULATION (not needed, DRM_MSM already handled)
-          CORE_CONFIGS="DRM_MSM_SDE|DRM_MSM_DSI|DRM_MSM_DP$|DRM_MSM_DP_MST|DRM_SDE_WB|DRM_SDE_RSC|DRM_SDE_VM|DSI_PARSER|DRM_MSM$|DRM_MSM_HDMI_HDCP"
+          CORE_CONFIGS="DRM_MSM_SDE|DRM_MSM_DSI|DRM_MSM_DP$|DRM_MSM_DP_MST|DRM_SDE_WB|DRM_SDE_RSC|DRM_SDE_VM|DSI_PARSER|DRM_MSM$"
           # First neutralize all optional configs (set to empty)
-          perl -pi -e 's/msm_drm-\$\(CONFIG_(?:DRM_MSM_DP_USBPD_LEGACY|MSM_SDE_ROTATOR|HDCP_QSEECOM|DRM_FBDEV_EMULATION)\)/msm_drm-/g' "$SMM"
+          perl -pi -e 's/msm_drm-\$\(CONFIG_(?:DRM_MSM_DP_USBPD_LEGACY|MSM_SDE_ROTATOR|HDCP_QSEECOM|DRM_FBDEV_EMULATION|DRM_MSM_HDMI_HDCP)\)/msm_drm-/g' "$SMM"
           # Then force core configs to =y
           perl -pi -e "s/msm_drm-\\\$\((?:$CORE_CONFIGS)\)/msm_drm-y/g" "$SMM"
           # 4. Disable in-tree DRM driver to avoid duplicate symbols
