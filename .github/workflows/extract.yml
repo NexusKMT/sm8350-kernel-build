@@ -1,0 +1,100 @@
+name: Extract
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  extract:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout harness
+        uses: actions/checkout@v7
+
+      - name: Install deps
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends kmod e2fsprogs python3
+
+      - name: Download stock firmware
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p stock
+          gh release download firmware-vendor -R "$GITHUB_REPOSITORY" -D stock -p "vendor_a.img.gz"
+          gunzip -f stock/vendor_a.img.gz
+          ls -la stock/
+
+      - name: Mount vendor ro + extract msm_drm.ko
+        run: |
+          sudo mkdir -p /mnt/vendor
+          sudo mount -o loop,ro stock/vendor_a.img /mnt/vendor
+          echo "=== all display-related .ko ==="
+          sudo find /mnt/vendor -name '*.ko' | grep -iE 'drm|display|msm_drm|dsi|sde|dpu|hdmi'
+          echo ""
+          echo "=== copy msm_drm.ko ==="
+          sudo find /mnt/vendor -name 'msm_drm.ko' -exec cp {} out_msm_drm.ko \; 2>/dev/null || true
+          mkdir -p out
+          sudo find /mnt/vendor -name 'msm_drm.ko' -exec sudo cp {} out/msm_drm.ko \;
+          ls -la out/msm_drm.ko
+          sudo umount /mnt/vendor
+
+      - name: Extract modinfo from msm_drm.ko
+        run: |
+          echo "=== modinfo ==="
+          modinfo out/msm_drm.ko 2>&1 || echo "modinfo failed (cross-arch)"
+          echo ""
+          echo "=== vermagic ==="
+          strings out/msm_drm.ko | grep 'vermagic='
+          echo ""
+          echo "=== srcversion (git hash of display-drivers tree) ==="
+          strings out/msm_drm.ko | grep 'srcversion='
+          echo ""
+          echo "=== all modinfo section ==="
+          strings out/msm_drm.ko | grep -E '^(name|vermagic|srcversion|license|description|author|depends|intree|parm)='
+
+      - name: Extract __versions (CRC table) from msm_drm.ko
+        run: |
+          python3 << 'PYEOF'
+          import struct
+          data = open('out/msm_drm.ko', 'rb').read()
+          e_shoff = struct.unpack_from('<Q', data, 0x28)[0]
+          e_shentsize = struct.unpack_from('<H', data, 0x3a)[0]
+          e_shnum = struct.unpack_from('<H', data, 0x3c)[0]
+          e_shstrndx = struct.unpack_from('<H', data, 0x3e)[0]
+          str_o = struct.unpack_from('<Q', data, e_shoff + e_shstrndx * e_shentsize + 24)[0]
+          str_s = struct.unpack_from('<Q', data, e_shoff + e_shstrndx * e_shentsize + 32)[0]
+          shstr = data[str_o:str_o + str_s]
+          for i in range(e_shnum):
+              o = e_shoff + i * e_shentsize
+              name, typ, flags, addr, offset, size = struct.unpack_from('<IIQQQQ', data, o)
+              nm = shstr[name:].split(b'\x00')[0].decode(errors='replace')
+              if nm == '.modinfo':
+                  modinfo = data[offset:offset+size].decode(errors='replace')
+                  print("=== .modinfo section ===")
+                  for line in modinfo.replace('\x00', '\n').split('\n'):
+                      if line.strip():
+                          print(f"  {line}")
+                  break
+          PYEOF
+
+      - name: Extract all DSC/SDE/DPU strings from msm_drm.ko
+        run: |
+          echo "=== DSC related ==="
+          strings out/msm_drm.ko | grep -iE 'dsc|slice|compress' | sort -u | head -20
+          echo ""
+          echo "=== SDE/DPU version markers ==="
+          strings out/msm_drm_ko 2>/dev/null | grep -iE 'sde_hw_dsc|sde_encoder|dpu_kms|sde_kms|version' | sort -u | head -10
+          echo ""
+          echo "=== git hash candidates (g[0-9a-f]{8,}) ==="
+          strings out/msm_drm.ko | grep -oE 'g[0-9a-f]{8,}' | sort -u | head -10
+
+      - name: Upload msm_drm.ko + analysis
+        uses: actions/upload-artifact@v7
+        with:
+          name: stock-msm-drm-analysis
+          path: |
+            out/msm_drm.ko
+          if-no-files-found: error
