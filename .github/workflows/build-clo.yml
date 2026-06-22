@@ -169,10 +169,10 @@ jobs:
           VARIANT=qgki-debug \
           MAKE_GOALS="Image dtbs" \
           CC="ccache clang" \
-          # Inject display driver build into build.sh
+          # Inject display driver config into .config via build.sh patch
           python3 scripts/inject-display-build.py
           echo "=== Verify injection ==="
-          grep -c 'Building display driver' build/build.sh
+          grep -c 'Injecting display config' build/build.sh
           BUILD_CONFIG=kernel/msm-5.4/build.config.msm.lahaina \
           KERNEL_DIR=kernel/msm-5.4 \
           VARIANT=qgki-debug \
