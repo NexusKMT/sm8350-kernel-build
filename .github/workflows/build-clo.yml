@@ -161,21 +161,8 @@ jobs:
         continue-on-error: true
         run: |
           cd "$GITHUB_WORKSPACE"
-          # ---- Display driver patches ----
-          # The techpack display driver is controlled by techpack/display/msm/Makefile
-          # which uses CONFIG_DISPLAY_BUILD, CONFIG_DRM_MSM_SDE, etc. from
-          # lahainadisp.conf. These are Makefile export variables, not Kconfig symbols.
-          # The conf file's export DOES work (diagnostic confirmed DRM_MSM_SDE=y,
-          # DRM_MSM=y, DISPLAY_BUILD=y during the actual build), but the driver
-          # still doesn't compile. The issue is likely that Make caches rules from
-          # the first pass (defconfig) where all variables are empty, and doesn't
-          # re-evaluate obj-* lines on the second pass (actual build).
-          #
-          # Solution: disable the in-tree DRM driver, then directly invoke make
-          # for the display driver after build.sh completes.
-          DM="kernel/msm-5.4/techpack/display/Makefile"
-          SMM="kernel/msm-5.4/techpack/display/msm/Makefile"
-          # Disable in-tree DRM driver
+          # Disable in-tree DRM driver (drivers/gpu/drm/msm/) to avoid duplicate symbols
+          # with the techpack display driver (techpack/display/msm/)
           sed -i 's|^obj-\$(CONFIG_DRM_MSM)\s*+= msm/|# disabled: techpack display replaces this|' kernel/msm-5.4/drivers/gpu/drm/Makefile
           BUILD_CONFIG=kernel/msm-5.4/build.config.msm.lahaina \
           KERNEL_DIR=kernel/msm-5.4 \
@@ -183,21 +170,22 @@ jobs:
           MAKE_GOALS="Image dtbs" \
           CC="ccache clang" \
           build/build.sh || true
-          echo "=== build.sh done, now manually build display driver ==="
+          echo "=== build.sh done, now rebuild with display driver ==="
           OUT=out/msm-5.4-lahaina-qgki-debug/kernel/msm-5.4
-          # Verify .config has DRM_MSM
           grep 'CONFIG_DRM_MSM=' "$OUT/.config" | head -3
-          # Build display driver directly with command-line config overrides
-          cd "$GITHUB_WORKSPACE"
-          make -s -C kernel/msm-5.4 O="$GITHUB_WORKSPACE/$OUT" \
+          # Add clang/gcc to PATH (build.sh sets this internally)
+          export PATH="$GITHUB_WORKSPACE/prebuilts-master/clang/host/linux-x86/clang-r416183b/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin:$PATH"
+          # Rebuild Image with display driver via command-line config overrides
+          # Command-line variables override auto.conf's := assignment
+          make -C kernel/msm-5.4 O="$GITHUB_WORKSPACE/$OUT" \
             CC="ccache clang" HOSTCC="ccache clang" \
             LD=ld.lld HOSTLD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy \
             CONFIG_DISPLAY_BUILD=y CONFIG_DRM_MSM=y CONFIG_DRM_MSM_SDE=y \
             CONFIG_DRM_MSM_DSI=y CONFIG_DRM_MSM_DP=y CONFIG_DRM_MSM_DP_MST=y \
             CONFIG_DRM_SDE_WB=y CONFIG_DRM_SDE_RSC=y CONFIG_DRM_SDE_VM=y \
             CONFIG_DSI_PARSER=y CONFIG_HDCP_QSEECOM=y CONFIG_DRM_MSM_HDMI_HDCP=y \
-            techpack/display/msm/built-in.a 2>&1 | tail -30
-          echo "=== Display build done ==="
+            Image dtbs 2>&1 | tail -30
+          echo "=== Rebuild done ==="
           echo "=== Checking Image exists ==="
           find out -name 'Image' -path '*/arch/arm64/boot/*' -type f | head -1 | xargs ls -la
 
