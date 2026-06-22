@@ -161,11 +161,13 @@ jobs:
         continue-on-error: true
         run: |
           cd "$GITHUB_WORKSPACE"
-          # CONFIG_QGKI is not a Kconfig symbol — make olddefconfig strips it from
-          # .config every time. Setting it as an env var makes it visible to make
-          # (auto.conf := $(CONFIG_QGKI) reads from env) so techpack Makefiles that
-          # check ifeq ($(CONFIG_QGKI), y) take the QGKI code path.
-          export CONFIG_QGKI=y
+          # CONFIG_QGKI is not a Kconfig symbol — olddefconfig strips it from .config.
+          # As a make *command-line* variable it overrides the empty value auto.conf
+          # writes, so techpack Makefiles see ifeq ($(CONFIG_QGKI), y) == true.
+          # Inject into build.sh right before the make ${MAKE_GOALS} call.
+          sed -i '/make -s O=\${OUT_DIR}.*MAKE_GOALS/ s/$/ CONFIG_QGKI=y/' build/build.sh
+          echo "=== Verify make line ==="
+          grep 'MAKE_GOALS' build/build.sh | grep 'make'
           BUILD_CONFIG=kernel/msm-5.4/build.config.msm.lahaina \
           KERNEL_DIR=kernel/msm-5.4 \
           VARIANT=qgki-debug \
