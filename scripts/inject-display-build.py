@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
-"""Inject CONFIG_DISPLAY_BUILD=y into build.sh after ALL olddefconfig calls."""
+"""Inject CONFIG_DISPLAY_BUILD=y into build.sh before make ${MAKE_GOALS}."""
 
 import sys
 
 BUILD_SH = "build/build.sh"
 
-# We need to inject CONFIG_DISPLAY_BUILD=y into .config AFTER the last
-# olddefconfig call (which is in the LTO section). This is a non-Kconfig
-# symbol that olddefconfig strips, so it must be added after all config
-# processing is done.
+# We need to inject CONFIG_DISPLAY_BUILD=y into .config AFTER all olddefconfig
+# calls but BEFORE make ${MAKE_GOALS}. CONFIG_DISPLAY_BUILD is not a Kconfig
+# symbol, so olddefconfig strips it. We add it right before the final make.
 #
-# Also inject CONFIG_DRM_MSM=y (which IS a Kconfig symbol but might be
-# cleared by olddefconfig if its dependencies aren't met).
+# Also inject CONFIG_DRM_MSM=y and sub-configs so auto.conf includes them.
 
 DISPLAY_CONFIGS = [
     "CONFIG_DISPLAY_BUILD=y",
@@ -29,40 +27,41 @@ DISPLAY_CONFIGS = [
 with open(BUILD_SH) as f:
     src = f.read()
 
-if "Injecting display config after LTO" in src:
+if "Injecting display config" in src:
     print("Already injected, skipping")
     sys.exit(0)
 
-# Find the LAST olddefconfig call (in the LTO section)
-# The LTO section looks like:
-#   (cd ${OUT_DIR} && make -s "${TOOL_ARGS[@]}" O=${OUT_DIR} "${MAKE_ARGS[@]}" olddefconfig)
-#   set +x
-# We inject after the last "set +x" that follows an olddefconfig.
+# Anchor: the line right before make ${MAKE_GOALS}
+# In build.sh, this is:
+#   (cd ${OUT_DIR} && make -s O=${OUT_DIR} "${TOOL_ARGS[@]}" "${MAKE_ARGS[@]}" ${MAKE_GOALS})
+ANCHOR = "(cd ${OUT_DIR} && make -s O=${OUT_DIR}"
 
-inject_lines = [
-    '',
-    '    # Inject display driver config after all olddefconfig calls',
-    '    echo "=== Injecting display config after LTO ==="',
-]
-for cfg in DISPLAY_CONFIGS:
-    inject_lines.append(f'    grep -q "^{cfg.split("=")[0]}=" "${{OUT_DIR}}/.config" 2>/dev/null \\')
-    inject_lines.append(f'      && sed -i "s|^{cfg.split("=")[0]}=.*|{cfg}|" "${{OUT_DIR}}/.config" \\')
-    inject_lines.append(f'      || echo "{cfg}" >> "${{OUT_DIR}}/.config"')
-inject_lines.append('    echo "=== Display config injected ==="')
-
-inject_block = '\n'.join(inject_lines) + '\n'
-
-# Find the last "set +x" after olddefconfig in the LTO section
-# Pattern: olddefconfig ... set +x ... fi
-# We inject after the last "set +x" before the "fi" that closes the LTO block
-last_set_plus_x = src.rfind('set +x')
-if last_set_plus_x < 0:
-    print("ERROR: 'set +x' not found", file=sys.stderr)
+if ANCHOR not in src:
+    print(f"ERROR: anchor not found in {BUILD_SH}", file=sys.stderr)
     sys.exit(1)
 
-# Find the newline after "set +x"
-newline_after = src.index('\n', last_set_plus_x)
-src = src[:newline_after + 1] + inject_block + src[newline_after + 1:]
+inject_lines = [
+    '    # Inject display driver config after all olddefconfig calls',
+    '    echo "=== Injecting display config ==="',
+]
+for cfg in DISPLAY_CONFIGS:
+    key = cfg.split('=')[0]
+    inject_lines.append(f'    if grep -q "^{key}=" "${{OUT_DIR}}/.config" 2>/dev/null; then')
+    inject_lines.append(f'      sed -i "s|^{key}=.*|{cfg}|" "${{OUT_DIR}}/.config"')
+    inject_lines.append(f'    elif grep -q "^# {key} is not set" "${{OUT_DIR}}/.config" 2>/dev/null; then')
+    inject_lines.append(f'      sed -i "s|^# {key} is not set|{cfg}|" "${{OUT_DIR}}/.config"')
+    inject_lines.append(f'    else')
+    inject_lines.append(f'      echo "{cfg}" >> "${{OUT_DIR}}/.config"')
+    inject_lines.append(f'    fi')
+inject_lines.append('    # Force regenerate auto.conf with new configs')
+inject_lines.append('    (cd ${OUT_DIR} && make -s "${TOOL_ARGS[@]}" O=${OUT_DIR} "${MAKE_ARGS[@]}" syncconfig)')
+inject_lines.append('    echo "=== Display config injected ==="')
+inject_lines.append('')
+
+inject_block = '\n'.join(inject_lines)
+
+# Insert before the ANCHOR line
+src = src.replace(ANCHOR, inject_block + '    ' + ANCHOR, 1)
 
 with open(BUILD_SH, "w") as f:
     f.write(src)
