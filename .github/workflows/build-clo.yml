@@ -157,24 +157,15 @@ jobs:
           key: sm8350-clo-lahaina-5.4-official
           max-size: 2G
 
-      - name: Patch build.sh to inject CONFIG_QGKI before make
-        run: |
-          cd "$GITHUB_WORKSPACE"
-          # CONFIG_QGKI is stripped by every olddefconfig call (not a Kconfig symbol).
-          # Inject it right before `make ${MAKE_GOALS}` so it's present at build time.
-          sed -i '/make -s O=\${OUT_DIR}.*MAKE_GOALS/i\
-              # Re-inject CONFIG_QGKI=y (stripped by olddefconfig, needed by techpack Makefiles)\
-              echo "=== Injecting CONFIG_QGKI=y into .config ==="\
-              grep -q "^CONFIG_QGKI=y$" "${OUT_DIR}/.config" || echo "CONFIG_QGKI=y" >> "${OUT_DIR}/.config"\
-              grep "CONFIG_QGKI=" "${OUT_DIR}/.config" | head -3
-          ' build/build.sh
-          echo "=== Patch applied, verifying ==="
-          grep -c 'Injecting CONFIG_QGKI' build/build.sh
-
       - name: Build kernel (official build.sh, all-builtin)
         continue-on-error: true
         run: |
           cd "$GITHUB_WORKSPACE"
+          # CONFIG_QGKI is not a Kconfig symbol — make olddefconfig strips it from
+          # .config every time. Setting it as an env var makes it visible to make
+          # (auto.conf := $(CONFIG_QGKI) reads from env) so techpack Makefiles that
+          # check ifeq ($(CONFIG_QGKI), y) take the QGKI code path.
+          export CONFIG_QGKI=y
           BUILD_CONFIG=kernel/msm-5.4/build.config.msm.lahaina \
           KERNEL_DIR=kernel/msm-5.4 \
           VARIANT=qgki-debug \
