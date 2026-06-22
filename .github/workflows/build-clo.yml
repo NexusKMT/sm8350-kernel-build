@@ -174,9 +174,12 @@ jobs:
           sed -i '/eval \${POST_DEFCONFIG_CMDS}/a\    ${KERNEL_DIR}/scripts/config --file ${OUT_DIR}/.config --enable DRM_MSM' build/build.sh
           sed -i '/scripts\/config.*DRM_MSM/a\    (cd ${OUT_DIR} \&\& make -s "${TOOL_ARGS[@]}" O=${OUT_DIR} "${MAKE_ARGS[@]}" olddefconfig)' build/build.sh
           sed -i '/olddefconfig.*MAKE_ARGS/a\    grep CONFIG_DRM_MSM ${OUT_DIR}/.config | head -3' build/build.sh
-          echo "=== Patches applied ==="
-          grep -c 'DRM_MSM' build/build.sh
+          echo "=== Verify display Makefile ==="
+          head -75 kernel/msm-5.4/techpack/display/Makefile | grep -n 'ifeq\|obj-\|include.*conf'
+          echo "=== Verify in-tree DRM disabled ==="
           grep 'msm' kernel/msm-5.4/drivers/gpu/drm/Makefile | head -3
+          echo "=== Verify build.sh injection ==="
+          grep -n 'DRM_MSM' build/build.sh | head -5
           BUILD_CONFIG=kernel/msm-5.4/build.config.msm.lahaina \
           KERNEL_DIR=kernel/msm-5.4 \
           VARIANT=qgki-debug \
