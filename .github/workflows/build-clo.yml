@@ -169,29 +169,24 @@ jobs:
           VARIANT=qgki-debug \
           MAKE_GOALS="Image dtbs" \
           CC="ccache clang" \
+          # Inject display driver build into build.sh before the final make Image
+          # This ensures the display driver is compiled in the same build pass
+          # (avoiding mrproper cleanup between separate make invocations)
+          sed -i '/make -s O=\${OUT_DIR}.*MAKE_GOALS/i\
+          # Build display driver with command-line config overrides\
+          echo "=== Building display driver ==="\
+          make -s "\${TOOL_ARGS[@]}" O="\${OUT_DIR}" "\${MAKE_ARGS[@]}" \\\
+            CONFIG_DISPLAY_BUILD=y CONFIG_DRM_MSM=y CONFIG_DRM_MSM_SDE=y \\\
+            CONFIG_DRM_MSM_DSI=y CONFIG_DRM_MSM_DP=y CONFIG_DRM_MSM_DP_MST=y \\\
+            CONFIG_DRM_SDE_WB=y CONFIG_DRM_SDE_RSC=y CONFIG_DRM_SDE_VM=y \\\
+            CONFIG_DSI_PARSER=y \\\
+            techpack/display/msm/built-in.a \\\
+            || echo "WARNING: display driver build failed, continuing"\
+          echo "=== Display driver build done ==="
+          ' build/build.sh
+          echo "=== Verify injection ==="
+          grep -c 'Building display driver' build/build.sh
           build/build.sh || true
-          echo "=== build.sh done, now rebuild with display driver ==="
-          OUT=out/msm-5.4-lahaina-qgki-debug/kernel/msm-5.4
-          grep 'CONFIG_DRM_MSM=' "$OUT/.config" | head -3
-          # Add clang/gcc to PATH (build.sh sets this internally)
-          export PATH="$GITHUB_WORKSPACE/prebuilts-master/clang/host/linux-x86/clang-r416183b/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin:$PATH"
-          # First, build the display driver's built-in.a
-          # Use -C to point to source tree, O= for output, and command-line overrides
-          make -C kernel/msm-5.4 O="$GITHUB_WORKSPACE/$OUT" \
-            CC="ccache clang" HOSTCC="ccache clang" \
-            LD=ld.lld HOSTLD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy \
-            CONFIG_DISPLAY_BUILD=y CONFIG_DRM_MSM=y CONFIG_DRM_MSM_SDE=y \
-            CONFIG_DRM_MSM_DSI=y CONFIG_DRM_MSM_DP=y CONFIG_DRM_MSM_DP_MST=y \
-            CONFIG_DRM_SDE_WB=y CONFIG_DRM_SDE_RSC=y CONFIG_DRM_SDE_VM=y \
-            CONFIG_DSI_PARSER=y \
-            techpack/display/msm/built-in.a 2>&1 | tail -30
-          echo "=== Display built-in.a done ==="
-          # Now re-link vmlinux and Image with the display driver included
-          make -C kernel/msm-5.4 O="$GITHUB_WORKSPACE/$OUT" \
-            CC="ccache clang" HOSTCC="ccache clang" \
-            LD=ld.lld HOSTLD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy \
-            Image dtbs 2>&1 | tail -10
-          echo "=== Re-link done ==="
           echo "=== Checking Image exists ==="
           find out -name 'Image' -path '*/arch/arm64/boot/*' -type f | head -1 | xargs ls -la
 
