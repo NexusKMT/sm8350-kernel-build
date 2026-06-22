@@ -157,16 +157,32 @@ jobs:
           key: sm8350-clo-lahaina-5.4-official
           max-size: 2G
 
+      - name: Patch build.sh to inject DRM_MSM=y into .config
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          # CONFIG_DRM_MSM is a valid Kconfig symbol (tristate, default n).
+          # QGKI config doesn't enable it — the techpack display driver relies on
+          # CONFIG_DISPLAY_BUILD from a conf file, but the kernel Kbuild rules use
+          # CONFIG_DRM_MSM to gate compilation of drivers/gpu/drm/msm/.
+          # Inject it into .config right before the LTO olddefconfig call so
+          # auto.conf gets CONFIG_DRM_MSM=y.
+          sed -i '/LTO.*none.*thin.*full/,/olddefconfig/ {
+            /olddefconfig/ {
+              i\
+              # Inject display driver config (not enabled by QGKI defconfig)\
+              echo "=== Injecting CONFIG_DRM_MSM=y into .config ==="\
+              grep -q "^CONFIG_DRM_MSM=" "${OUT_DIR}/.config" && sed -i "s/^# CONFIG_DRM_MSM is not set$/CONFIG_DRM_MSM=y/" "${OUT_DIR}/.config" || echo "CONFIG_DRM_MSM=y" >> "${OUT_DIR}/.config"
+            }
+          }' build/build.sh
+          echo "=== Patch applied ==="
+          grep -c 'Injecting CONFIG_DRM_MSM' build/build.sh
+
       - name: Build kernel (official build.sh, all-builtin)
         continue-on-error: true
         run: |
           cd "$GITHUB_WORKSPACE"
-          # CONFIG_QGKI is not a Kconfig symbol — make olddefconfig strips it from
-          # .config and auto.conf's := assignment overrides any command-line variable.
-          # Patch display Makefile to always use the QGKI config path.
+          # Also patch display Makefile QGKI check (belt-and-suspenders with DRM_MSM inject)
           sed -i 's/ifeq (\$(CONFIG_QGKI), y)/ifeq (y, y)/' kernel/msm-5.4/techpack/display/Makefile
-          echo "=== Verify display Makefile patch ==="
-          grep 'ifeq.*y.*y' kernel/msm-5.4/techpack/display/Makefile
           BUILD_CONFIG=kernel/msm-5.4/build.config.msm.lahaina \
           KERNEL_DIR=kernel/msm-5.4 \
           VARIANT=qgki-debug \
