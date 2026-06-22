@@ -161,38 +161,22 @@ jobs:
         continue-on-error: true
         run: |
           cd "$GITHUB_WORKSPACE"
-          # Patch display Makefile to always use QGKI config path
+          # ---- Display driver patches ----
+          # The techpack display driver depends on non-Kconfig symbols (CONFIG_QGKI,
+          # CONFIG_DISPLAY_BUILD) that are not in auto.conf and whose export from .conf
+          # files doesn't propagate through Kbuild sub-makes. Bypass entirely:
+          # 1. Force QGKI config path in display Makefile
           sed -i 's/ifeq (\$(CONFIG_QGKI), y)/ifeq (y, y)/' kernel/msm-5.4/techpack/display/Makefile
-          # Disable the in-tree DRM_MSM driver (drivers/gpu/drm/msm/) to avoid
-          # duplicate symbols with the techpack display driver (techpack/display/msm/).
-          # The stock firmware uses only the techpack driver; the in-tree one is for GKI.
+          # 2. Unconditionally enter msm/ subdirectory (bypass CONFIG_DRM_MSM gate)
+          sed -i 's|^obj-$(CONFIG_DRM_MSM)\s*+= msm/|obj-y += msm/ # forced: was obj-$(CONFIG_DRM_MSM)|' kernel/msm-5.4/techpack/display/Makefile
+          # 3. Unconditionally compile msm_drm.o (bypass CONFIG_DISPLAY_BUILD gate)
+          sed -i 's|^obj-$(CONFIG_DISPLAY_BUILD)\s*+=|obj-y += # forced: was obj-$(CONFIG_DISPLAY_BUILD)|' kernel/msm-5.4/techpack/display/msm/Makefile
+          # 4. Disable in-tree DRM driver (drivers/gpu/drm/msm/) to avoid duplicate symbols
           sed -i 's|^obj-$(CONFIG_DRM_MSM)\s*+= msm/|# obj-$(CONFIG_DRM_MSM) += msm/ # disabled: techpack display replaces this|' kernel/msm-5.4/drivers/gpu/drm/Makefile
-          # Inject CONFIG_DRM_MSM=y into build.sh after POST_DEFCONFIG_CMDS.
-          # CONFIG_DRM_MSM is a valid Kconfig tristate (default n). QGKI defconfig
-          # does not enable it. We use scripts/config + olddefconfig so auto.conf
-          # picks it up before make runs.
-          sed -i '/eval \${POST_DEFCONFIG_CMDS}/a\    ${KERNEL_DIR}/scripts/config --file ${OUT_DIR}/.config --enable DRM_MSM' build/build.sh
-          sed -i '/scripts\/config.*DRM_MSM/a\    (cd ${OUT_DIR} \&\& make -s "${TOOL_ARGS[@]}" O=${OUT_DIR} "${MAKE_ARGS[@]}" olddefconfig)' build/build.sh
-          sed -i '/olddefconfig.*MAKE_ARGS/a\    grep CONFIG_DRM_MSM ${OUT_DIR}/.config | head -3' build/build.sh
-          echo "=== Verify display Makefile ==="
-          head -75 kernel/msm-5.4/techpack/display/Makefile | grep -n 'ifeq\|obj-\|include.*conf'
-          echo "=== Verify in-tree DRM disabled ==="
+          echo "=== Verify patches ==="
+          grep -n 'obj-' kernel/msm-5.4/techpack/display/Makefile | grep -i 'msm\|display'
+          grep -n 'obj-' kernel/msm-5.4/techpack/display/msm/Makefile | head -3
           grep 'msm' kernel/msm-5.4/drivers/gpu/drm/Makefile | head -3
-          echo "=== Verify build.sh injection ==="
-          grep -n 'DRM_MSM' build/build.sh | head -5
-          # The techpack display conf file (lahainadisp.conf) sets many non-Kconfig
-          # variables that are NOT in auto.conf. Setting them as env vars ensures
-          # they're available to Make even if the conf file inclusion fails.
-          # These are the variables from lahainadisp.conf with DISPLAY_BUILD=y (CI sed).
-          export CONFIG_DRM_MSM_SDE=y
-          export CONFIG_DRM_MSM_DP=y
-          export CONFIG_DRM_MSM_DP_MST=y
-          export CONFIG_DRM_SDE_WB=y
-          export CONFIG_QCOM_MDSS_PLL=y
-          export CONFIG_DRM_SDE_RSC=y
-          export CONFIG_DSI_PARSER=y
-          export CONFIG_DRM_SDE_VM=y
-          export CONFIG_DISPLAY_BUILD=y
           BUILD_CONFIG=kernel/msm-5.4/build.config.msm.lahaina \
           KERNEL_DIR=kernel/msm-5.4 \
           VARIANT=qgki-debug \
