@@ -176,7 +176,10 @@ jobs:
           CLO_IMAGE=$(find out -name 'Image' -path '*/arch/arm64/boot/*' -type f | head -1)
           echo "CLO Image: $CLO_IMAGE ($(stat -c%s "$CLO_IMAGE") bytes)"
           mkdir -p out/dist boot-work
-          python3 tools/mkbootimg/unpack_bootimg.py --boot_img boot/alpha-boot_a.img --out boot-work >/dev/null 2>&1
+          git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg tools/mkbootimg 2>/dev/null || true
+          git clone --depth=1 https://android.googlesource.com/platform/external/avb       tools/avb       2>/dev/null || true
+          python3 tools/mkbootimg/unpack_bootimg.py --boot_img boot/alpha-boot_a.img --out boot-work
+          ls boot-work/
           python3 tools/mkbootimg/mkbootimg.py \
             --header_version 3 \
             --os_version 11.0.0 \
