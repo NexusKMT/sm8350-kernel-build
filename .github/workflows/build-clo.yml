@@ -157,22 +157,19 @@ jobs:
           key: sm8350-clo-lahaina-5.4-official
           max-size: 2G
 
-      - name: Patch build.sh to inject QGKI config after POST_DEFCONFIG_CMDS
+      - name: Patch build.sh to inject CONFIG_QGKI before make
         run: |
           cd "$GITHUB_WORKSPACE"
-          sed -i '/eval \${POST_DEFCONFIG_CMDS}/a\
-              # Inject QGKI + display config (not in any Kconfig, stripped by olddefconfig)\
-              echo "=== Patching .config for QGKI display driver ==="\
-              for sym in CONFIG_QGKI=y; do\
-                grep -q "^${sym}$" "${OUT_DIR}/.config" 2>/dev/null || echo "${sym}" >> "${OUT_DIR}/.config"\
-              done\
-              (cd ${OUT_DIR} && make -s "${TOOL_ARGS[@]}" O=${OUT_DIR} "${MAKE_ARGS[@]}" olddefconfig)\
-              echo "=== Post-patch: QGKI + DRM_MSM status ==="\
-              grep -E "^(# )?CONFIG_QGKI=" "${OUT_DIR}/.config" || echo "CONFIG_QGKI: not in .config"\
-              grep -E "^(# )?CONFIG_DRM_MSM=" "${OUT_DIR}/.config" || echo "CONFIG_DRM_MSM: not in .config"
+          # CONFIG_QGKI is stripped by every olddefconfig call (not a Kconfig symbol).
+          # Inject it right before `make ${MAKE_GOALS}` so it's present at build time.
+          sed -i '/make -s O=\${OUT_DIR}.*MAKE_GOALS/i\
+              # Re-inject CONFIG_QGKI=y (stripped by olddefconfig, needed by techpack Makefiles)\
+              echo "=== Injecting CONFIG_QGKI=y into .config ==="\
+              grep -q "^CONFIG_QGKI=y$" "${OUT_DIR}/.config" || echo "CONFIG_QGKI=y" >> "${OUT_DIR}/.config"\
+              grep "CONFIG_QGKI=" "${OUT_DIR}/.config" | head -3
           ' build/build.sh
           echo "=== Patch applied, verifying ==="
-          grep -c 'QGKI display driver' build/build.sh
+          grep -c 'Injecting CONFIG_QGKI' build/build.sh
 
       - name: Build kernel (official build.sh, all-builtin)
         continue-on-error: true
