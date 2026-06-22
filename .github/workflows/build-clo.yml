@@ -164,8 +164,7 @@ jobs:
           # CONFIG_QGKI is not a Kconfig symbol — olddefconfig strips it from .config.
           # As a make *command-line* variable it overrides the empty value auto.conf
           # writes, so techpack Makefiles see ifeq ($(CONFIG_QGKI), y) == true.
-          # Inject into build.sh right before the make ${MAKE_GOALS} call.
-          sed -i '/make -s O=\${OUT_DIR}.*MAKE_GOALS/ s/$/ CONFIG_QGKI=y/' build/build.sh
+          sed -i 's/\${MAKE_GOALS}/\${MAKE_GOALS} CONFIG_QGKI=y/' build/build.sh
           echo "=== Verify make line ==="
           grep 'MAKE_GOALS' build/build.sh | grep 'make'
           BUILD_CONFIG=kernel/msm-5.4/build.config.msm.lahaina \
