@@ -163,6 +163,10 @@ jobs:
           cd "$GITHUB_WORKSPACE"
           # Patch display Makefile to always use QGKI config path
           sed -i 's/ifeq (\$(CONFIG_QGKI), y)/ifeq (y, y)/' kernel/msm-5.4/techpack/display/Makefile
+          # Disable the in-tree DRM_MSM driver (drivers/gpu/drm/msm/) to avoid
+          # duplicate symbols with the techpack display driver (techpack/display/msm/).
+          # The stock firmware uses only the techpack driver; the in-tree one is for GKI.
+          sed -i 's|^obj-$(CONFIG_DRM_MSM)\s*+= msm/|# obj-$(CONFIG_DRM_MSM) += msm/ # disabled: techpack display replaces this|' kernel/msm-5.4/drivers/gpu/drm/Makefile
           # Inject CONFIG_DRM_MSM=y into build.sh after POST_DEFCONFIG_CMDS.
           # CONFIG_DRM_MSM is a valid Kconfig tristate (default n). QGKI defconfig
           # does not enable it. We use scripts/config + olddefconfig so auto.conf
@@ -170,8 +174,9 @@ jobs:
           sed -i '/eval \${POST_DEFCONFIG_CMDS}/a\    ${KERNEL_DIR}/scripts/config --file ${OUT_DIR}/.config --enable DRM_MSM' build/build.sh
           sed -i '/scripts\/config.*DRM_MSM/a\    (cd ${OUT_DIR} \&\& make -s "${TOOL_ARGS[@]}" O=${OUT_DIR} "${MAKE_ARGS[@]}" olddefconfig)' build/build.sh
           sed -i '/olddefconfig.*MAKE_ARGS/a\    grep CONFIG_DRM_MSM ${OUT_DIR}/.config | head -3' build/build.sh
-          echo "=== Patch applied ==="
+          echo "=== Patches applied ==="
           grep -c 'DRM_MSM' build/build.sh
+          grep 'msm' kernel/msm-5.4/drivers/gpu/drm/Makefile | head -3
           BUILD_CONFIG=kernel/msm-5.4/build.config.msm.lahaina \
           KERNEL_DIR=kernel/msm-5.4 \
           VARIANT=qgki-debug \
