@@ -163,28 +163,15 @@ jobs:
           cd "$GITHUB_WORKSPACE"
           # Patch display Makefile to always use QGKI config path
           sed -i 's/ifeq (\$(CONFIG_QGKI), y)/ifeq (y, y)/' kernel/msm-5.4/techpack/display/Makefile
-          # CONFIG_DRM_MSM=y must be in auto.conf for obj-$(CONFIG_DRM_MSM) to work.
-          # Inject into .config via scripts/config before each olddefconfig.
-          # Use the eval ${POST_DEFCONFIG_CMDS} anchor — inject AFTER it (runs before
-          # the LTO olddefconfig which regenerates auto.conf).
-          python3 -c "
-          import re
-          with open('build/build.sh') as f: src = f.read()
-          inject = '''
-    # Inject CONFIG_DRM_MSM=y into .config (QGKI disables it, display needs it)
-    "\${KERNEL_DIR}/scripts/config" --file "\${OUT_DIR}/.config" --enable DRM_MSM
-    (cd "\${OUT_DIR}" && make -s "\${TOOL_ARGS[@]}" O="\${OUT_DIR}" "\${MAKE_ARGS[@]}" olddefconfig)
-    echo "=== DRM_MSM status: \$(grep CONFIG_DRM_MSM \"\${OUT_DIR}/.config\" | head -1) ==="
-'''
-          src = src.replace(
-              'eval \${POST_DEFCONFIG_CMDS}\\n    set +x',
-              'eval \${POST_DEFCONFIG_CMDS}' + inject + '    set +x',
-              1
-          )
-          with open('build/build.sh', 'w') as f: f.write(src)
-          "
+          # Inject CONFIG_DRM_MSM=y into build.sh after POST_DEFCONFIG_CMDS.
+          # CONFIG_DRM_MSM is a valid Kconfig tristate (default n). QGKI defconfig
+          # does not enable it. We use scripts/config + olddefconfig so auto.conf
+          # picks it up before make runs.
+          sed -i '/eval \${POST_DEFCONFIG_CMDS}/a\    ${KERNEL_DIR}/scripts/config --file ${OUT_DIR}/.config --enable DRM_MSM' build/build.sh
+          sed -i '/scripts\/config.*DRM_MSM/a\    (cd ${OUT_DIR} \&\& make -s "${TOOL_ARGS[@]}" O=${OUT_DIR} "${MAKE_ARGS[@]}" olddefconfig)' build/build.sh
+          sed -i '/olddefconfig.*MAKE_ARGS/a\    grep CONFIG_DRM_MSM ${OUT_DIR}/.config | head -3' build/build.sh
           echo "=== Patch applied ==="
-          grep -c 'DRM_MSM status' build/build.sh
+          grep -c 'DRM_MSM' build/build.sh
           BUILD_CONFIG=kernel/msm-5.4/build.config.msm.lahaina \
           KERNEL_DIR=kernel/msm-5.4 \
           VARIANT=qgki-debug \
