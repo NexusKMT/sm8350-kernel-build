@@ -165,9 +165,8 @@ jobs:
       - name: Apply defconfig
         run: |
           set -euo pipefail
-          cd "$GITHUB_WORKSPACE"
+          cd "$GITHUB_WORKSPACE/kernel/msm-5.4"
           export PATH="$GITHUB_WORKSPACE/prebuilts-master/clang/host/linux-x86/clang-r416183b/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin:$PATH"
-          KERNEL=kernel/msm-5.4
 
           KBUILD_ARGS=(
             O=out
