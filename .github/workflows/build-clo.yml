@@ -168,19 +168,18 @@ jobs:
           cd "$GITHUB_WORKSPACE/kernel/msm-5.4"
           export PATH="$GITHUB_WORKSPACE/prebuilts-master/clang/host/linux-x86/clang-r416183b/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin:$PATH"
 
-          KBUILD_ARGS=(
-            O=out
-            ARCH=arm64
+          TOOL_ARGS=(
             CC="ccache clang"
-            CLANG_TRIPLE=aarch64-linux-gnu-
-            CROSS_COMPILE=aarch64-linux-gnu-
-            CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
-            LLVM=1
-            LLVM_IAS=1
+            HOSTCC="ccache clang"
+            LD=ld.lld
+            HOSTLD=ld.lld
+            NM=llvm-nm
+            OBJCOPY=llvm-objcopy
+            DEPMOD=depmod
           )
 
-          make "${KBUILD_ARGS[@]}" vendor/lahaina-qgki-debug_defconfig
-          make "${KBUILD_ARGS[@]}" olddefconfig
+          make O=out "${TOOL_ARGS[@]}" vendor/lahaina-qgki-debug_defconfig
+          make O=out "${TOOL_ARGS[@]}" olddefconfig
 
           echo "=== .config verification ==="
           echo "ARCH_LAHAINA: $(grep '^CONFIG_ARCH_LAHAINA=' out/.config || echo MISSING)"
@@ -264,13 +263,9 @@ jobs:
           cd "$GITHUB_WORKSPACE/kernel/msm-5.4"
           export PATH="$GITHUB_WORKSPACE/prebuilts-master/clang/host/linux-x86/clang-r416183b/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin:$PATH"
 
-          make -j$(nproc --all) O=out \
-            ARCH=arm64 \
-            CC="ccache clang" \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
-            LLVM=1 LLVM_IAS=1 \
+          make -j$(nproc --all) -s O=out \
+            CC="ccache clang" HOSTCC="ccache clang" \
+            LD=ld.lld HOSTLD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy DEPMOD=depmod \
             Image 2>&1 | tee build.log
           RC=${PIPESTATUS[0]}
 
@@ -289,13 +284,9 @@ jobs:
           cd "$GITHUB_WORKSPACE/kernel/msm-5.4"
           export PATH="$GITHUB_WORKSPACE/prebuilts-master/clang/host/linux-x86/clang-r416183b/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin:$PATH"
 
-          make -j$(nproc --all) O=out \
-            ARCH=arm64 \
-            CC="ccache clang" \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
-            LLVM=1 LLVM_IAS=1 \
+          make -j$(nproc --all) -s O=out \
+            CC="ccache clang" HOSTCC="ccache clang" \
+            LD=ld.lld HOSTLD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy DEPMOD=depmod \
             dtbs 2>&1 | tee -a build.log
 
           LAHAINA_COUNT=$(find out -name 'lahaina*.dtb' 2>/dev/null | wc -l)
@@ -308,13 +299,9 @@ jobs:
           cd "$GITHUB_WORKSPACE/kernel/msm-5.4"
           export PATH="$GITHUB_WORKSPACE/prebuilts-master/clang/host/linux-x86/clang-r416183b/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin:$PATH"
 
-          make -j$(nproc --all) O=out \
-            ARCH=arm64 \
-            CC="ccache clang" \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
-            LLVM=1 LLVM_IAS=1 \
+          make -j$(nproc --all) -s O=out \
+            CC="ccache clang" HOSTCC="ccache clang" \
+            LD=ld.lld HOSTLD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy DEPMOD=depmod \
             modules 2>&1 | tee -a build.log
           RC=${PIPESTATUS[0]}
 
