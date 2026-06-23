@@ -9,8 +9,6 @@ permissions:
 env:
   KERNEL_REPO: arter97-mirror/caf_msm-5.4
   KERNEL_REF: LA.UM.10.9.1.r1
-  BUILD_REPO: https://github.com/KudProject/kernel_build.git
-  BUILD_REF: android-12.1
 
 jobs:
   build:
@@ -40,21 +38,12 @@ jobs:
             gcc git libelf-dev libssl-dev lz4 make \
             python3 zip zstd
 
-      - name: Set up workspace (official repo layout)
+      - name: Set up workspace
         run: |
           cd "$GITHUB_WORKSPACE"
-          git clone --depth=1 -b "$BUILD_REF" "$BUILD_REPO" build
           git clone --depth=1 -b "$KERNEL_REF" "https://github.com/${KERNEL_REPO}.git" kernel/msm-5.4
-          mkdir -p prebuilts-master/clang/host/linux-x86
-          mkdir -p prebuilts/gcc/linux-x86/aarch64
-          mkdir -p prebuilts/gcc/linux-x86/arm
-          mkdir -p prebuilts
-          git clone --depth=1 https://git.codelinaro.org/clo/la/platform/prebuilts/build-tools.git prebuilts/build-tools
-          ls build/build.sh build/_setup_env.sh
-          grep -c 'function append_cmd' build/_setup_env.sh
-          ls prebuilts/build-tools/linux-x86/bin/bison prebuilts/build-tools/common/bison 2>/dev/null | head
 
-      - name: Fetch techpack components (CLO @ LA.UM.10.9.1.r1* — per-component closest branch)
+      - name: Fetch techpack components
         run: |
           cd "$GITHUB_WORKSPACE/kernel/msm-5.4/techpack"
           CLO=https://git.codelinaro.org/clo/la/platform/vendor/opensource
@@ -63,19 +52,13 @@ jobs:
           git clone --depth=1 -b LA.UM.10.9.1.r1   "$CLO/video-driver.git"   video
           git clone --depth=1 -b LA.UM.10.9.1.r1   "$CLO/dataipa.git"        dataipa
           git clone --depth=1 -b LA.UM.10.9.1.r1.1 "$CLO/camera-kernel.git"  camera
+          echo "=== techpack dirs ==="
           ls
 
-      - name: Force display DLKM to builtin (all-builtin, skip audio to avoid codec conflicts)
+      - name: Fetch lahaina DTBs
         run: |
-          cd "$GITHUB_WORKSPACE/kernel/msm-5.4/techpack"
-          echo "=== Only patch display .conf: DISPLAY_BUILD=m to =y ==="
-          find . -name '*disp*.conf' -path '*/config/*' -exec sed -i 's/CONFIG_DISPLAY_BUILD=m/CONFIG_DISPLAY_BUILD=y/g' {} \;
-          echo "=== Audio .conf left as-is (=m, will compile as module but not packaged) ==="
-          echo "=== Other techpack already uses .conf QGKI logic for =y/=m ==="
-
-      - name: Fetch lahaina DTBs (from Motorola SM8350 tree)
-        run: |
-          git clone --depth=1 --filter=blob:none --sparse https://github.com/schqiushui/android_kernel_motorola_sm8350.git /tmp/moto
+          git clone --depth=1 --filter=blob:none --sparse \
+            https://github.com/schqiushui/android_kernel_motorola_sm8350.git /tmp/moto
           cd /tmp/moto
           git sparse-checkout set arch/arm64/boot/dts/vendor
           git checkout
@@ -112,127 +95,285 @@ jobs:
           if ! grep -q 'subdir-y += vendor' "$DTS_ROOT/Makefile"; then
             echo 'subdir-y += vendor' >> "$DTS_ROOT/Makefile"
           fi
-          echo "=== qcom Makefile (lahaina-only) ==="
-          cat "$DTS_ROOT/vendor/qcom/Makefile"
-          echo "=== lahaina dts files present ==="
-          ls "$DTS_ROOT/vendor/qcom/" | grep -c '^lahaina'
+          echo "=== lahaina dts files: $(ls "$DTS_ROOT/vendor/qcom/" | grep -c '^lahaina') ==="
 
       - name: Cache AOSP Clang r416183b
         id: cache-clang
         uses: actions/cache@v5
         with:
-          path: prebuilts-master/clang/host/linux-x86/clang-r416183b
+          path: clang-r416183b
           key: aosp-clang-r416183b
 
       - name: Download AOSP Clang r416183b
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
-          mkdir -p prebuilts-master/clang/host/linux-x86/clang-r416183b
+          mkdir -p clang-r416183b
           curl -L "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master-kernel-build-2021/clang-r416183b.tar.gz" \
-            | tar xz -C prebuilts-master/clang/host/linux-x86/clang-r416183b
-          prebuilts-master/clang/host/linux-x86/clang-r416183b/bin/clang --version
+            | tar xz -C clang-r416183b
+          clang-r416183b/bin/clang --version
 
       - name: Cache aarch64 + arm GCC 4.9
         id: cache-gcc
         uses: actions/cache@v5
         with:
           path: |
-            prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9
-            prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9
+            gcc-aarch64
+            gcc-arm
           key: aosp-gcc-4.9-android12L
 
       - name: Download aarch64 + arm GCC 4.9
         if: steps.cache-gcc.outputs.cache-hit != 'true'
         run: |
-          mkdir -p prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9
-          mkdir -p prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9
+          mkdir -p gcc-aarch64 gcc-arm
           curl -L "https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/heads/android12L-release.tar.gz" \
-            | tar xz -C prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9
+            | tar xz -C gcc-aarch64
           curl -L "https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/heads/android12L-release.tar.gz" \
-            | tar xz -C prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9
+            | tar xz -C gcc-arm
 
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2.23
         with:
-          key: sm8350-clo-lahaina-5.4-official
+          key: sm8350-clo-lahaina-5.4
           max-size: 2G
 
-      - name: Build kernel (official build.sh, all-builtin)
+      # =========================================================================
+      # Generate defconfig — uses the CLO's own fragment-merge system:
+      #   gki_defconfig + lahaina_GKI.config(allyes) + lahaina_QGKI.config
+      #   + lahaina_debug.config → vendor/lahaina-qgki-debug_defconfig
+      # =========================================================================
+      - name: Generate defconfig from fragments
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE"
-          # Patch display Makefiles to force-compile the display driver
-          # CONFIG_DISPLAY_BUILD is not a Kconfig symbol, so auto.conf doesn't
-          # include it. Force obj-y directly.
-          DM=kernel/msm-5.4/techpack/display/Makefile
-          SMM=kernel/msm-5.4/techpack/display/msm/Makefile
-          # Disable in-tree DRM driver
-          sed -i 's|^obj-\$(CONFIG_DRM_MSM)\s*+= msm/|# disabled: techpack display replaces|' kernel/msm-5.4/drivers/gpu/drm/Makefile
-          # Force display driver compilation
-          sed -i 's|^obj-\$(CONFIG_DISPLAY_BUILD)\s*+=|obj-y +=|' "$SMM"
-          sed -i 's|^obj-\$(CONFIG_DRM_MSM)\s*+= msm/|obj-y += msm/|' "$DM"
-          # Force core msm_drm sub-objects (CONFIG_* variables are empty in auto.conf)
-          # Exclude conflicting optional components:
-          #   DP_USBPD_LEGACY (conflicts with typec.h/usbpd.h)
-          #   MSM_SDE_ROTATOR (conflicts with inline stubs)
-          #   HDCP_QSEECOM (requires QSEE firmware, conflicts with msm_rtb.h)
-          #   DRM_MSM_HDMI_HDCP (depends on HDCP_QSEECOM)
-          #   DRM_FBDEV_EMULATION (not needed)
-          # First neutralize conflicting components
-          perl -pi -e 's/msm_drm-\$\(CONFIG_(?:DRM_MSM_DP_USBPD_LEGACY|MSM_SDE_ROTATOR|DRM_FBDEV_EMULATION)\)/msm_drm-/g' "$SMM"
-          # Fix isb() implicit declaration in msm_rtb.h
-          # Add -include asm/barrier.h to ccflags so isb() is always available
-          sed -i '1iccflags-y += -include $(srctree)/arch/arm64/include/asm/barrier.h' "$SMM"
-          # Then force all remaining CONFIG_* to =y
-          perl -pi -e 's/msm_drm-\$\(CONFIG_\w+\)/msm_drm-y/g' "$SMM"
-          echo "=== Verify msm/Makefile ==="
-          grep -n 'msm_drm-y\|msm_drm-\$' "$SMM" | head -10
-          echo "=== Verify patches ==="
-          grep -n 'obj-y\|obj-\$' "$DM" | grep -i 'msm\|display'
-          grep -n 'obj-y\|obj-\$' "$SMM" | head -3
-          BUILD_CONFIG=kernel/msm-5.4/build.config.msm.lahaina \
-          KERNEL_DIR=kernel/msm-5.4 \
-          VARIANT=qgki-debug \
-          MAKE_GOALS="Image dtbs modules" \
-          CC="ccache clang" \
-          # Inject display driver config into .config via build.sh patch
-          python3 scripts/inject-display-build.py
-          echo "=== Verify injection ==="
-          grep -c 'Injecting display config' build/build.sh
-          BUILD_CONFIG=kernel/msm-5.4/build.config.msm.lahaina \
-          KERNEL_DIR=kernel/msm-5.4 \
-          VARIANT=qgki-debug \
-          MAKE_GOALS="Image dtbs modules" \
-          CC="ccache clang" \
-          build/build.sh
-          echo "=== Checking Image exists ==="
-          CLO_IMAGE=$(find out -name 'Image' -path '*/arch/arm64/boot/*' -type f -print -quit)
-          test -n "$CLO_IMAGE"
-          ls -la "$CLO_IMAGE"
+          export PATH="$GITHUB_WORKSPACE/clang-r416183b/bin:$GITHUB_WORKSPACE/gcc-aarch64/bin:$GITHUB_WORKSPACE/gcc-arm/bin:$PATH"
+          KERNEL=kernel/msm-5.4
 
-      - name: Package boot.img (CLO Image + debug ramdisk + AVB pad)
+          # Source the CLO envsetup to set up fragment paths
+          source ${KERNEL}/scripts/gki/envsetup.sh lahaina
+
+          # Merge fragments: base + GKI(allyes) + QGKI + debug
+          # This is what generate_defconfig.sh does for qgki-debug variant
+          ALLYES_FRAG=${CONFIGS_DIR}/lahaina_ALLYES_GKI.config
+          ${KERNEL}/scripts/gki/fragment_allyesconfig.sh ${QCOM_GKI_FRAG} ${ALLYES_FRAG}
+
+          FINAL_BLEND="${BASE_DEFCONFIG} ${ALLYES_FRAG} ${QCOM_QGKI_FRAG} ${QCOM_DEBUG_FS_FRAG} ${QCOM_DEBUG_FRAG}"
+          # Reverse for correct override order (base first, debug last)
+          FINAL_BLEND=$(echo "$FINAL_BLEND" | awk '{ for (i=NF; i>1; i--) printf("%s ",$i); print $1 }')
+
+          echo "=== defconfig blend ==="
+          echo "$FINAL_BLEND"
+
+          ARCH=arm64 \
+          CROSS_COMPILE=aarch64-linux-gnu- \
+          ${KERNEL}/scripts/kconfig/merge_config.sh -m $FINAL_BLEND
+
+          make ARCH=arm64 \
+            CC="ccache clang" \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            LLVM=1 LLVM_IAS=1 \
+            savedefconfig
+
+          mv defconfig ${KERNEL}/arch/arm64/configs/vendor/lahaina-qgki-debug_defconfig
+          rm -f ${ALLYES_FRAG}
+          echo "=== defconfig generated ==="
+
+      # =========================================================================
+      # Apply defconfig and resolve dependencies — direct make, not build.sh
+      # =========================================================================
+      - name: Apply defconfig
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE"
-          CLO_IMAGE=$(find out -name 'Image' -path '*/arch/arm64/boot/*' -type f -print -quit)
-          test -n "$CLO_IMAGE"
-          echo "CLO Image: $CLO_IMAGE ($(stat -c%s "$CLO_IMAGE") bytes)"
+          export PATH="$GITHUB_WORKSPACE/clang-r416183b/bin:$GITHUB_WORKSPACE/gcc-aarch64/bin:$GITHUB_WORKSPACE/gcc-arm/bin:$PATH"
+          KERNEL=kernel/msm-5.4
+
+          KBUILD_ARGS=(
+            O=out
+            ARCH=arm64
+            CC="ccache clang"
+            CLANG_TRIPLE=aarch64-linux-gnu-
+            CROSS_COMPILE=aarch64-linux-gnu-
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
+            LLVM=1
+            LLVM_IAS=1
+          )
+
+          make "${KBUILD_ARGS[@]}" vendor/lahaina-qgki-debug_defconfig
+          make "${KBUILD_ARGS[@]}" olddefconfig
+
+          echo "=== .config verification ==="
+          echo "ARCH_LAHAINA: $(grep '^CONFIG_ARCH_LAHAINA=' out/.config || echo MISSING)"
+          echo "QGKI: $(grep '^CONFIG_QGKI=' out/.config || echo MISSING)"
+          echo "DRM_MSM: $(grep -E '^CONFIG_DRM_MSM[= ]' out/.config || echo 'NOT SET (will use .conf export)')"
+          echo "DISPLAY_BUILD: $(grep '^CONFIG_DISPLAY_BUILD=' out/.config || echo 'NOT SET (expected — set by techpack .conf)')"
+          echo "builtin (=y): $(grep -cE '^CONFIG.*=y$' out/.config)"
+          echo "module (=m):  $(grep -cE '^CONFIG.*=m$' out/.config)"
+
+      # =========================================================================
+      # Display-notifier __weak stubs — display is built as a module (=m),
+      # so vmlinux itself doesn't have msm_drm symbols. Other in-tree code
+      # (camera, touch) may reference msm_drm_register_client etc. at link
+      # time. __weak stubs satisfy the linker; when the real msm_drm.ko loads,
+      # its strong symbols override these.
+      # =========================================================================
+      - name: Inject display-notifier stubs for vmlinux linkage
+        run: |
+          cd "$GITHUB_WORKSPACE/kernel/msm-5.4"
+          STUB_DIR="drivers/clo_display_stubs"
+          mkdir -p "$STUB_DIR"
+
+          cat > "$STUB_DIR/display_notifier_stubs.c" << 'EOF'
+          // SPDX-License-Identifier: GPL-2.0-only
+          // Weak stubs for msm_drm notifier symbols.
+          // Display is built as a module (=m); these stubs let vmlinux link
+          // without the real display driver. The real symbols override at
+          // module load time.
+
+          #include <linux/module.h>
+          #include <linux/notifier.h>
+
+          int __weak msm_drm_register_client(struct notifier_block *nb)
+          {
+          	return 0;
+          }
+          EXPORT_SYMBOL(msm_drm_register_client);
+
+          int __weak msm_drm_unregister_client(struct notifier_block *nb)
+          {
+          	return 0;
+          }
+          EXPORT_SYMBOL(msm_drm_unregister_client);
+
+          int __weak register_lcdinfo_notifier(struct notifier_block *nb)
+          {
+          	return 0;
+          }
+          EXPORT_SYMBOL(register_lcdinfo_notifier);
+
+          int __weak unregister_lcdinfo_notifier(struct notifier_block *nb)
+          {
+          	return 0;
+          }
+          EXPORT_SYMBOL(unregister_lcdinfo_notifier);
+          EOF
+
+          # Strip leading whitespace from heredoc
+          sed -i 's/^          //' "$STUB_DIR/display_notifier_stubs.c"
+
+          cat > "$STUB_DIR/Makefile" << 'EOF'
+          obj-y += display_notifier_stubs.o
+          EOF
+
+          if ! grep -q 'clo_display_stubs' drivers/Makefile; then
+            echo 'obj-y += clo_display_stubs/' >> drivers/Makefile
+            echo "Hooked clo_display_stubs/ into drivers/Makefile"
+          fi
+
+          echo "=== stub contents ==="
+          cat "$STUB_DIR/display_notifier_stubs.c"
+
+      # =========================================================================
+      # Build — split into Image / dtbs / modules for error isolation.
+      # Display compiles as a module via techpack/.conf → lahainadisp.conf
+      # injection chain. No hacks needed.
+      # =========================================================================
+      - name: Build Image
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE"
+          export PATH="$GITHUB_WORKSPACE/clang-r416183b/bin:$GITHUB_WORKSPACE/gcc-aarch64/bin:$GITHUB_WORKSPACE/gcc-arm/bin:$PATH"
+
+          make -j$(nproc --all) O=out \
+            ARCH=arm64 \
+            CC="ccache clang" \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            LLVM=1 LLVM_IAS=1 \
+            Image 2>&1 | tee build.log
+          RC=${PIPESTATUS[0]}
+
+          if [ "$RC" -ne 0 ] || [ ! -f out/arch/arm64/boot/Image ]; then
+            echo "=== BUILD FAILED (exit $RC) ==="
+            grep -E "error:|undefined reference|ld.lld: error|Stop\." build.log | tail -40 || true
+            exit 1
+          fi
+
+          echo "=== Image built ==="
+          du -h out/arch/arm64/boot/Image
+
+      - name: Build DTBs
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE"
+          export PATH="$GITHUB_WORKSPACE/clang-r416183b/bin:$GITHUB_WORKSPACE/gcc-aarch64/bin:$GITHUB_WORKSPACE/gcc-arm/bin:$PATH"
+
+          make -j$(nproc --all) O=out \
+            ARCH=arm64 \
+            CC="ccache clang" \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            LLVM=1 LLVM_IAS=1 \
+            dtbs 2>&1 | tee -a build.log
+
+          LAHAINA_COUNT=$(find out -name 'lahaina*.dtb' 2>/dev/null | wc -l)
+          echo "=== lahaina DTBs: $LAHAINA_COUNT ==="
+          test "$LAHAINA_COUNT" -gt 0
+
+      - name: Build modules (includes display as =m)
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE"
+          export PATH="$GITHUB_WORKSPACE/clang-r416183b/bin:$GITHUB_WORKSPACE/gcc-aarch64/bin:$GITHUB_WORKSPACE/gcc-arm/bin:$PATH"
+
+          make -j$(nproc --all) O=out \
+            ARCH=arm64 \
+            CC="ccache clang" \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            LLVM=1 LLVM_IAS=1 \
+            modules 2>&1 | tee -a build.log
+          RC=${PIPESTATUS[0]}
+
+          if [ "$RC" -ne 0 ]; then
+            echo "=== MODULES BUILD FAILED (exit $RC) ==="
+            grep -E "error:|undefined reference|Stop\." build.log | tail -40 || true
+            exit 1
+          fi
+
+          echo "=== modules built ==="
+          echo ".ko count: $(find out -name '*.ko' | wc -l)"
+
+          # Verify display module was built
+          if find out -name 'msm_drm.ko' | grep -q .; then
+            echo "✓ msm_drm.ko built (display as module)"
+          else
+            echo "⚠ msm_drm.ko not found — display may not have compiled"
+          fi
+
+      # =========================================================================
+      # Package boot.img — CLO Image + debug ramdisk + AVB
+      # =========================================================================
+      - name: Package boot.img
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE"
+          CLO_IMAGE=out/arch/arm64/boot/Image
+          test -f "$CLO_IMAGE"
+          echo "CLO Image: $(stat -c%s "$CLO_IMAGE") bytes"
           mkdir -p out/dist boot-work
           git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg tools/mkbootimg 2>/dev/null || true
           git clone --depth=1 https://android.googlesource.com/platform/external/avb       tools/avb       2>/dev/null || true
           python3 tools/mkbootimg/unpack_bootimg.py --boot_img boot/debug-boot_a.img --out boot-work
           ls boot-work/
           mkdir -p boot-work/ramdisk-tree
-          # cpio may warn on Magisk .backup/ files (Permission denied) — harmless
           (cd boot-work/ramdisk-tree && gzip -dc ../ramdisk | cpio -idmu) || true
-          echo "=== debug ramdisk adb/default props ==="
+          echo "=== debug ramdisk adb props ==="
           grep -E '^(ro.debuggable|ro.adb.secure|persist.sys.usb.config)=' boot-work/ramdisk-tree/prop.default || true
-          mkdir -p /tmp/manifest
-          {
-            echo "boot_base=boot/debug-boot_a.img"
-            echo "cmdline=androidboot.selinux=permissive ignore_loglevel log_buf_len=16M printk.devkmsg=on drm.debug=0x1ff"
-            grep -E '^(ro.debuggable|ro.adb.secure|persist.sys.usb.config)=' boot-work/ramdisk-tree/prop.default || true
-          } > /tmp/manifest/boot-base.txt
           python3 tools/mkbootimg/mkbootimg.py \
             --header_version 3 \
             --os_version 11.0.0 \
@@ -245,101 +386,45 @@ jobs:
             --image out/dist/boot-new.img \
             --partition_size 100663296 \
             --partition_name boot
-          ls -la out/dist/boot-new.img
-          echo "boot.img size: $(stat -c%s out/dist/boot-new.img) bytes"
-          # Clean up extracted ramdisk-tree (Magisk dirs have restrictive perms)
+          echo "boot.img: $(stat -c%s out/dist/boot-new.img) bytes"
           rm -rf boot-work/ramdisk-tree
 
-      - name: Locate outputs
-        run: |
-          cd "$GITHUB_WORKSPACE"
-          echo "=== Image ==="
-          find . -path '*/arch/arm64/boot/Image' -not -path '*/build/*' 2>/dev/null | head
-          echo "=== Module.symvers ==="
-          find . -name Module.symvers -not -path '*/build/*' 2>/dev/null | head
-          echo "=== .ko modules ==="
-          find . -name '*.ko' -not -path '*/build/*' 2>/dev/null | wc -l
-
-      - name: Dump full artifact manifest
+      # =========================================================================
+      # Artifacts — manifest, modules, Image, Module.symvers, boot.img
+      # =========================================================================
+      - name: Dump artifact manifest
         if: always()
         run: |
           cd "$GITHUB_WORKSPACE"
-          OUT=$(find out -maxdepth 1 -type d | grep -v '^out$' | head -1)
-          echo "OUT_DIR=$OUT"
           mkdir -p /tmp/manifest
 
-          echo "=== 1. final .config ==="
-          find "$OUT" -name '.config' 2>/dev/null | head -1 | xargs -I{} cp {} /tmp/manifest/dot-config 2>/dev/null || echo "no .config found"
+          echo "=== 1. .config ==="
+          cp out/.config /tmp/manifest/dot-config 2>/dev/null || echo "no .config"
           wc -l /tmp/manifest/dot-config 2>/dev/null
 
-          echo "=== 2. all .ko (with full paths) ==="
-          find "$OUT" -name '*.ko' 2>/dev/null > /tmp/manifest/all-ko-paths.txt
-          find "$OUT" -name '*.ko' 2>/dev/null | xargs -n1 basename 2>/dev/null | sort > /tmp/manifest/all-ko-names.txt
+          echo "=== 2. .ko list ==="
+          find out -name '*.ko' > /tmp/manifest/all-ko-paths.txt
+          find out -name '*.ko' | xargs -n1 basename | sort > /tmp/manifest/all-ko-names.txt
           echo ".ko count: $(wc -l < /tmp/manifest/all-ko-paths.txt)"
 
           echo "=== 3. Module.symvers ==="
-          find "$OUT" -name Module.symvers 2>/dev/null | head -1 | xargs -I{} cp {} /tmp/manifest/Module.symvers 2>/dev/null
+          find out -name Module.symvers | head -1 | xargs -I{} cp {} /tmp/manifest/Module.symvers
 
-          echo "=== 4. all .dtb ==="
-          find "$OUT" -name '*.dtb' -o -name '*.dtbo' 2>/dev/null | xargs -n1 basename 2>/dev/null | sort > /tmp/manifest/all-dtb-names.txt 2>/dev/null
-          echo "dtb count: $(wc -l < /tmp/manifest/all-dtb-names.txt 2>/dev/null || echo 0)"
+          echo "=== 4. DTBs ==="
+          find out -name '*.dtb' -o -name '*.dtbo' | xargs -n1 basename 2>/dev/null | sort > /tmp/manifest/all-dtb-names.txt
 
-          echo "=== 5. .config: CNSS/WLAN/PCI key values ==="
-          grep -iE '^CONFIG_(CNSS|ICNSS|PCI_MSM|ARCH_QCOM|ARCH_LAHAINA|WLAN|CNSS_UTILS)=' /tmp/manifest/dot-config 2>/dev/null > /tmp/manifest/wifi-config.txt || echo "no .config to grep"
+          echo "=== 5. display config ==="
+          for key in CONFIG_DISPLAY_BUILD CONFIG_DRM_MSM CONFIG_DRM_MSM_SDE \
+                     CONFIG_DRM_MSM_DSI CONFIG_DRM_MSM_DP CONFIG_DRM_SDE_WB \
+                     CONFIG_QGKI CONFIG_ARCH_LAHAINA; do
+            grep -E "^(# )?${key}(=| is not set)" /tmp/manifest/dot-config 2>/dev/null \
+              || echo "${key}=<absent>"
+          done > /tmp/manifest/display-config.txt
+          cat /tmp/manifest/display-config.txt
 
-          echo "=== 5b. .config: USB/touch/haptics/display key values ==="
-          cat > /tmp/manifest/device-config-keys.txt <<'EOF'
-          CONFIG_USB_DWC3
-          CONFIG_USB_DWC3_QCOM
-          CONFIG_USB_DWC3_MSM
-          CONFIG_USB_DWC3_DUAL_ROLE
-          CONFIG_USB_GADGET
-          CONFIG_USB_LIBCOMPOSITE
-          CONFIG_USB_F_FS
-          CONFIG_USB_CONFIGFS
-          CONFIG_USB_CONFIGFS_UEVENT
-          CONFIG_USB_CONFIGFS_F_FS
-          CONFIG_USB_CONFIGFS_F_DIAG
-          CONFIG_USB_CONFIGFS_F_GSI
-          CONFIG_USB_CONFIGFS_F_QDSS
-          CONFIG_USB_ROLE_SWITCH
-          CONFIG_USB_MSM_SSPHY_QMP
-          CONFIG_MSM_HSUSB_PHY
-          CONFIG_NOP_USB_XCEIV
-          CONFIG_TYPEC
-          CONFIG_TYPEC_UCSI
-          CONFIG_UCSI_QTI_GLINK
-          CONFIG_QTI_PMIC_GLINK
-          CONFIG_QTI_ALTMODE_GLINK
-          CONFIG_QCOM_EUD
-          CONFIG_EXTCON
-          CONFIG_EXTCON_USB_GPIO
-          CONFIG_INPUT_QPNP_POWER_ON
-          CONFIG_INPUT_QCOM_HV_HAPTICS
-          CONFIG_TOUCHSCREEN_GOODIX
-          CONFIG_TOUCHSCREEN_GOODIX_I2C
-          CONFIG_TOUCHSCREEN_GOODIX_BRL
-          CONFIG_TOUCHSCREEN_GOODIX_BRL_I2C
-          CONFIG_TOUCHSCREEN_SYNAPTICS_DSX
-          CONFIG_TOUCHSCREEN_FTS
-          CONFIG_TOUCHSCREEN_NT36XXX
-          CONFIG_AW86917_HAPTICS
-          CONFIG_DISPLAY_BUILD
-          CONFIG_DRM_MSM
-          CONFIG_MSM_DRM
-          EOF
-          sed -i 's/^          //' /tmp/manifest/device-config-keys.txt
-          while IFS= read -r key; do
-            grep -E "^(# )?${key}(=| is not set)" /tmp/manifest/dot-config 2>/dev/null || echo "${key}=<absent>"
-          done < /tmp/manifest/device-config-keys.txt > /tmp/manifest/device-config.txt
-
-          echo "=== 6. .config: builtin(=y) count vs module(=m) count ==="
+          echo "=== 6. builtin vs module ==="
           echo "builtin (=y): $(grep -cE '^CONFIG.*=y$' /tmp/manifest/dot-config 2>/dev/null || echo 0)"
           echo "module (=m):  $(grep -cE '^CONFIG.*=m$' /tmp/manifest/dot-config 2>/dev/null || echo 0)"
-
-          echo "=== 7. modules.load + modules.dep (if exist) ==="
-          find "$OUT" -name 'modules.load' 2>/dev/null | head -1 | xargs -I{} cp {} /tmp/manifest/modules.load 2>/dev/null
-          find "$OUT" -name 'modules.dep' 2>/dev/null | head -1 | xargs -I{} cp {} /tmp/manifest/modules.dep 2>/dev/null
 
       - name: Upload manifest
         if: always()
@@ -349,12 +434,19 @@ jobs:
           path: /tmp/manifest/
           if-no-files-found: warn
 
+      - name: Upload Module.symvers
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: clo-Module.symvers
+          path: /tmp/manifest/Module.symvers
+          if-no-files-found: warn
+
       - name: Collect + upload all .ko modules
         if: always()
         run: |
           mkdir -p /tmp/all-modules
-          OUT=$(find out -maxdepth 1 -type d | grep -v '^out$' | head -1)
-          find "$OUT" -name '*.ko' -exec cp {} /tmp/all-modules/ \; 2>/dev/null
+          find out -name '*.ko' -exec cp {} /tmp/all-modules/ \; 2>/dev/null
           echo "total .ko: $(ls /tmp/all-modules/*.ko 2>/dev/null | wc -l)"
       - uses: actions/upload-artifact@v7
         if: always()
@@ -368,13 +460,11 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: clo-kernel-Image
-          path: |
-            out/**/arch/arm64/boot/Image
-            **/arch/arm64/boot/Image
-          if-no-files-found: warn
+          path: out/arch/arm64/boot/Image
+          if-no-files-found: error
           retention-days: 7
 
-      - name: Upload boot.img (flashable, all-builtin)
+      - name: Upload boot.img
         uses: actions/upload-artifact@v7
         with:
           name: boot-img
