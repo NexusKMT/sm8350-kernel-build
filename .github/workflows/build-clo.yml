@@ -171,10 +171,17 @@ jobs:
           # Force display driver compilation
           sed -i 's|^obj-\$(CONFIG_DISPLAY_BUILD)\s*+=|obj-y +=|' "$SMM"
           sed -i 's|^obj-\$(CONFIG_DRM_MSM)\s*+= msm/|obj-y += msm/|' "$DM"
-          # Force all msm_drm sub-objects (CONFIG_* variables are empty in auto.conf)
+          # Force core msm_drm sub-objects (CONFIG_* variables are empty in auto.conf)
+          # Exclude conflicting optional components:
+          #   DP_USBPD_LEGACY (conflicts with typec.h/usbpd.h)
+          #   MSM_SDE_ROTATOR (conflicts with inline stubs)
+          #   HDCP_QSEECOM (requires QSEE firmware, conflicts with msm_rtb.h)
+          #   DRM_MSM_HDMI_HDCP (depends on HDCP_QSEECOM)
+          #   DRM_FBDEV_EMULATION (not needed)
+          # First neutralize conflicting components
+          perl -pi -e 's/msm_drm-\$\(CONFIG_(?:DRM_MSM_DP_USBPD_LEGACY|MSM_SDE_ROTATOR|HDCP_QSEECOM|DRM_MSM_HDMI_HDCP|DRM_FBDEV_EMULATION)\)/msm_drm-/g' "$SMM"
+          # Then force all remaining CONFIG_* to =y
           perl -pi -e 's/msm_drm-\$\(CONFIG_\w+\)/msm_drm-y/g' "$SMM"
-          # Restore conflicting optional components to empty
-          perl -pi -e 's/msm_drm-y =\s*$/msm_drm-/g' "$SMM"  # noop
           echo "=== Verify msm/Makefile ==="
           grep -n 'msm_drm-y\|msm_drm-\$' "$SMM" | head -10
           echo "=== Verify patches ==="
