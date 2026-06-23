@@ -150,6 +150,9 @@ jobs:
           KERNEL=kernel/msm-5.4
 
           # Source the CLO envsetup to set up fragment paths
+          # TARGET_BUILD_VARIANT is normally set by Android build env;
+          # "userdebug" includes debugfs.config (non-user variant)
+          export TARGET_BUILD_VARIANT=userdebug
           source ${KERNEL}/scripts/gki/envsetup.sh lahaina
 
           # Merge fragments: base + GKI(allyes) + QGKI + debug
