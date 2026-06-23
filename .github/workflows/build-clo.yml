@@ -261,7 +261,7 @@ jobs:
       - name: Build Image
         run: |
           set -euo pipefail
-          cd "$GITHUB_WORKSPACE"
+          cd "$GITHUB_WORKSPACE/kernel/msm-5.4"
           export PATH="$GITHUB_WORKSPACE/prebuilts-master/clang/host/linux-x86/clang-r416183b/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin:$PATH"
 
           make -j$(nproc --all) O=out \
@@ -286,7 +286,7 @@ jobs:
       - name: Build DTBs
         run: |
           set -euo pipefail
-          cd "$GITHUB_WORKSPACE"
+          cd "$GITHUB_WORKSPACE/kernel/msm-5.4"
           export PATH="$GITHUB_WORKSPACE/prebuilts-master/clang/host/linux-x86/clang-r416183b/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin:$PATH"
 
           make -j$(nproc --all) O=out \
@@ -305,7 +305,7 @@ jobs:
       - name: Build modules (includes display as =m)
         run: |
           set -euo pipefail
-          cd "$GITHUB_WORKSPACE"
+          cd "$GITHUB_WORKSPACE/kernel/msm-5.4"
           export PATH="$GITHUB_WORKSPACE/prebuilts-master/clang/host/linux-x86/clang-r416183b/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin:$PATH"
 
           make -j$(nproc --all) O=out \
@@ -341,10 +341,10 @@ jobs:
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE"
-          CLO_IMAGE=out/arch/arm64/boot/Image
+          CLO_IMAGE=kernel/msm-5.4/out/arch/arm64/boot/Image
           test -f "$CLO_IMAGE"
           echo "CLO Image: $(stat -c%s "$CLO_IMAGE") bytes"
-          mkdir -p out/dist boot-work
+          mkdir -p kernel/msm-5.4/out/dist boot-work
           git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg tools/mkbootimg 2>/dev/null || true
           git clone --depth=1 https://android.googlesource.com/platform/external/avb       tools/avb       2>/dev/null || true
           python3 tools/mkbootimg/unpack_bootimg.py --boot_img boot/debug-boot_a.img --out boot-work
@@ -360,12 +360,12 @@ jobs:
             --kernel "$CLO_IMAGE" \
             --ramdisk boot-work/ramdisk \
             --cmdline ' androidboot.selinux=permissive ignore_loglevel log_buf_len=16M printk.devkmsg=on drm.debug=0x1ff' \
-            -o out/dist/boot-new.img
+            -o kernel/msm-5.4/out/dist/boot-new.img
           python3 tools/avb/avbtool.py add_hash_footer \
-            --image out/dist/boot-new.img \
+            --image kernel/msm-5.4/out/dist/boot-new.img \
             --partition_size 100663296 \
             --partition_name boot
-          echo "boot.img: $(stat -c%s out/dist/boot-new.img) bytes"
+          echo "boot.img: $(stat -c%s kernel/msm-5.4/out/dist/boot-new.img) bytes"
           rm -rf boot-work/ramdisk-tree
 
       # =========================================================================
@@ -375,22 +375,23 @@ jobs:
         if: always()
         run: |
           cd "$GITHUB_WORKSPACE"
+          OUT=kernel/msm-5.4/out
           mkdir -p /tmp/manifest
 
           echo "=== 1. .config ==="
-          cp out/.config /tmp/manifest/dot-config 2>/dev/null || echo "no .config"
+          cp "$OUT/.config" /tmp/manifest/dot-config 2>/dev/null || echo "no .config"
           wc -l /tmp/manifest/dot-config 2>/dev/null
 
           echo "=== 2. .ko list ==="
-          find out -name '*.ko' > /tmp/manifest/all-ko-paths.txt
-          find out -name '*.ko' | xargs -n1 basename | sort > /tmp/manifest/all-ko-names.txt
+          find "$OUT" -name '*.ko' > /tmp/manifest/all-ko-paths.txt
+          find "$OUT" -name '*.ko' | xargs -n1 basename | sort > /tmp/manifest/all-ko-names.txt
           echo ".ko count: $(wc -l < /tmp/manifest/all-ko-paths.txt)"
 
           echo "=== 3. Module.symvers ==="
-          find out -name Module.symvers | head -1 | xargs -I{} cp {} /tmp/manifest/Module.symvers
+          find "$OUT" -name Module.symvers | head -1 | xargs -I{} cp {} /tmp/manifest/Module.symvers
 
           echo "=== 4. DTBs ==="
-          find out -name '*.dtb' -o -name '*.dtbo' | xargs -n1 basename 2>/dev/null | sort > /tmp/manifest/all-dtb-names.txt
+          find "$OUT" -name '*.dtb' -o -name '*.dtbo' | xargs -n1 basename 2>/dev/null | sort > /tmp/manifest/all-dtb-names.txt
 
           echo "=== 5. display config ==="
           for key in CONFIG_DISPLAY_BUILD CONFIG_DRM_MSM CONFIG_DRM_MSM_SDE \
@@ -425,7 +426,7 @@ jobs:
         if: always()
         run: |
           mkdir -p /tmp/all-modules
-          find out -name '*.ko' -exec cp {} /tmp/all-modules/ \; 2>/dev/null
+          find kernel/msm-5.4/out -name '*.ko' -exec cp {} /tmp/all-modules/ \; 2>/dev/null
           echo "total .ko: $(ls /tmp/all-modules/*.ko 2>/dev/null | wc -l)"
       - uses: actions/upload-artifact@v7
         if: always()
@@ -439,7 +440,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: clo-kernel-Image
-          path: out/arch/arm64/boot/Image
+          path: kernel/msm-5.4/out/arch/arm64/boot/Image
           if-no-files-found: error
           retention-days: 7
 
@@ -447,5 +448,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: boot-img
-          path: out/dist/boot-new.img
+          path: kernel/msm-5.4/out/dist/boot-new.img
           if-no-files-found: error
