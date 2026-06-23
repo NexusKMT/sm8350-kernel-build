@@ -169,8 +169,10 @@ jobs:
           export PATH="$GITHUB_WORKSPACE/prebuilts-master/clang/host/linux-x86/clang-r416183b/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin:$PATH"
 
           TOOL_ARGS=(
+            ARCH=arm64
             CC="ccache clang"
             HOSTCC="ccache clang"
+            CROSS_COMPILE=aarch64-linux-android-
             LD=ld.lld
             HOSTLD=ld.lld
             NM=llvm-nm
@@ -264,6 +266,7 @@ jobs:
           export PATH="$GITHUB_WORKSPACE/prebuilts-master/clang/host/linux-x86/clang-r416183b/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin:$PATH"
 
           make -j$(nproc --all) -s O=out \
+            ARCH=arm64 CROSS_COMPILE=aarch64-linux-android- \
             CC="ccache clang" HOSTCC="ccache clang" \
             LD=ld.lld HOSTLD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy DEPMOD=depmod \
             Image 2>&1 | tee build.log
@@ -285,6 +288,7 @@ jobs:
           export PATH="$GITHUB_WORKSPACE/prebuilts-master/clang/host/linux-x86/clang-r416183b/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin:$PATH"
 
           make -j$(nproc --all) -s O=out \
+            ARCH=arm64 CROSS_COMPILE=aarch64-linux-android- \
             CC="ccache clang" HOSTCC="ccache clang" \
             LD=ld.lld HOSTLD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy DEPMOD=depmod \
             dtbs 2>&1 | tee -a build.log
@@ -300,6 +304,7 @@ jobs:
           export PATH="$GITHUB_WORKSPACE/prebuilts-master/clang/host/linux-x86/clang-r416183b/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin:$PATH"
 
           make -j$(nproc --all) -s O=out \
+            ARCH=arm64 CROSS_COMPILE=aarch64-linux-android- \
             CC="ccache clang" HOSTCC="ccache clang" \
             LD=ld.lld HOSTLD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy DEPMOD=depmod \
             modules 2>&1 | tee -a build.log
