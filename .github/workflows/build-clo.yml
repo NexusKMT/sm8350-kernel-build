@@ -345,7 +345,7 @@ jobs:
           fi
 
       # =========================================================================
-      # Package boot.img — CLO Image + debug ramdisk + AVB
+      # Package boot.img — CLO Image + alpha ramdisk + AVB
       # =========================================================================
       - name: Package boot.img
         run: |
@@ -357,11 +357,11 @@ jobs:
           mkdir -p kernel/msm-5.4/out/dist boot-work
           git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg tools/mkbootimg 2>/dev/null || true
           git clone --depth=1 https://android.googlesource.com/platform/external/avb       tools/avb       2>/dev/null || true
-          python3 tools/mkbootimg/unpack_bootimg.py --boot_img boot/debug-boot_a.img --out boot-work
+          python3 tools/mkbootimg/unpack_bootimg.py --boot_img boot/alpha-boot_a.img --out boot-work
           ls boot-work/
           mkdir -p boot-work/ramdisk-tree
           (cd boot-work/ramdisk-tree && gzip -dc ../ramdisk | cpio -idmu) || true
-          echo "=== debug ramdisk adb props ==="
+          echo "=== alpha ramdisk adb props ==="
           grep -E '^(ro.debuggable|ro.adb.secure|persist.sys.usb.config)=' boot-work/ramdisk-tree/prop.default || true
           python3 tools/mkbootimg/mkbootimg.py \
             --header_version 3 \
@@ -369,7 +369,7 @@ jobs:
             --os_patch_level 2021-01 \
             --kernel "$CLO_IMAGE" \
             --ramdisk boot-work/ramdisk \
-            --cmdline ' androidboot.selinux=permissive ignore_loglevel log_buf_len=16M printk.devkmsg=on drm.debug=0x1ff' \
+            --cmdline ' androidboot.selinux=permissive' \
             -o kernel/msm-5.4/out/dist/boot-new.img
           python3 tools/avb/avbtool.py add_hash_footer \
             --image kernel/msm-5.4/out/dist/boot-new.img \
