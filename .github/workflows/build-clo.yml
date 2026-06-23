@@ -180,6 +180,8 @@ jobs:
           #   DRM_FBDEV_EMULATION (not needed)
           # First neutralize conflicting components
           perl -pi -e 's/msm_drm-\$\(CONFIG_(?:DRM_MSM_DP_USBPD_LEGACY|MSM_SDE_ROTATOR|HDCP_QSEECOM|DRM_MSM_HDMI_HDCP|DRM_FBDEV_EMULATION)\)/msm_drm-/g' "$SMM"
+          # Remove HDCP objects from DP compilation (they need HDCP_QSEECOM)
+          sed -i '/sde_hdcp_1x\.o/d; /sde_hdcp_2x\.o/d' "$SMM"
           # Then force all remaining CONFIG_* to =y
           perl -pi -e 's/msm_drm-\$\(CONFIG_\w+\)/msm_drm-y/g' "$SMM"
           echo "=== Verify msm/Makefile ==="
