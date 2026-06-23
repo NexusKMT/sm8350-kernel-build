@@ -101,34 +101,35 @@ jobs:
         id: cache-clang
         uses: actions/cache@v5
         with:
-          path: clang-r416183b
+          path: prebuilts-master/clang/host/linux-x86/clang-r416183b
           key: aosp-clang-r416183b
 
       - name: Download AOSP Clang r416183b
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
-          mkdir -p clang-r416183b
+          mkdir -p prebuilts-master/clang/host/linux-x86/clang-r416183b
           curl -L "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master-kernel-build-2021/clang-r416183b.tar.gz" \
-            | tar xz -C clang-r416183b
-          clang-r416183b/bin/clang --version
+            | tar xz -C prebuilts-master/clang/host/linux-x86/clang-r416183b
+          prebuilts-master/clang/host/linux-x86/clang-r416183b/bin/clang --version
 
       - name: Cache aarch64 + arm GCC 4.9
         id: cache-gcc
         uses: actions/cache@v5
         with:
           path: |
-            gcc-aarch64
-            gcc-arm
+            prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9
+            prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9
           key: aosp-gcc-4.9-android12L
 
       - name: Download aarch64 + arm GCC 4.9
         if: steps.cache-gcc.outputs.cache-hit != 'true'
         run: |
-          mkdir -p gcc-aarch64 gcc-arm
+          mkdir -p prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9
+          mkdir -p prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9
           curl -L "https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/heads/android12L-release.tar.gz" \
-            | tar xz -C gcc-aarch64
+            | tar xz -C prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9
           curl -L "https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/heads/android12L-release.tar.gz" \
-            | tar xz -C gcc-arm
+            | tar xz -C prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9
 
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2.23
@@ -145,7 +146,7 @@ jobs:
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE"
-          export PATH="$GITHUB_WORKSPACE/clang-r416183b/bin:$GITHUB_WORKSPACE/gcc-aarch64/bin:$GITHUB_WORKSPACE/gcc-arm/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/prebuilts-master/clang/host/linux-x86/clang-r416183b/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin:$PATH"
           KERNEL=kernel/msm-5.4
 
           # Source the CLO envsetup to set up fragment paths
@@ -186,7 +187,7 @@ jobs:
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE"
-          export PATH="$GITHUB_WORKSPACE/clang-r416183b/bin:$GITHUB_WORKSPACE/gcc-aarch64/bin:$GITHUB_WORKSPACE/gcc-arm/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/prebuilts-master/clang/host/linux-x86/clang-r416183b/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin:$PATH"
           KERNEL=kernel/msm-5.4
 
           KBUILD_ARGS=(
@@ -283,7 +284,7 @@ jobs:
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE"
-          export PATH="$GITHUB_WORKSPACE/clang-r416183b/bin:$GITHUB_WORKSPACE/gcc-aarch64/bin:$GITHUB_WORKSPACE/gcc-arm/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/prebuilts-master/clang/host/linux-x86/clang-r416183b/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin:$PATH"
 
           make -j$(nproc --all) O=out \
             ARCH=arm64 \
@@ -308,7 +309,7 @@ jobs:
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE"
-          export PATH="$GITHUB_WORKSPACE/clang-r416183b/bin:$GITHUB_WORKSPACE/gcc-aarch64/bin:$GITHUB_WORKSPACE/gcc-arm/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/prebuilts-master/clang/host/linux-x86/clang-r416183b/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin:$PATH"
 
           make -j$(nproc --all) O=out \
             ARCH=arm64 \
@@ -327,7 +328,7 @@ jobs:
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE"
-          export PATH="$GITHUB_WORKSPACE/clang-r416183b/bin:$GITHUB_WORKSPACE/gcc-aarch64/bin:$GITHUB_WORKSPACE/gcc-arm/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/prebuilts-master/clang/host/linux-x86/clang-r416183b/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin:$PATH"
 
           make -j$(nproc --all) O=out \
             ARCH=arm64 \
