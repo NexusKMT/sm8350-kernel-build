@@ -183,6 +183,7 @@ jobs:
             NM=llvm-nm
             OBJCOPY=llvm-objcopy
             DEPMOD=depmod
+            LLVM_IAS=1
           )
 
           make O=out "${TOOL_ARGS[@]}" vendor/lahaina-qgki-debug_defconfig
@@ -273,7 +274,7 @@ jobs:
 
           make -j$(nproc --all) -s O=out \
             CC="ccache clang" HOSTCC="ccache clang" \
-            LD=ld.lld HOSTLD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy DEPMOD=depmod \
+            LD=ld.lld HOSTLD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy DEPMOD=depmod LLVM_IAS=1 \
             Image 2>&1 | tee build.log
           RC=${PIPESTATUS[0]}
 
@@ -295,7 +296,7 @@ jobs:
 
           make -j$(nproc --all) -s O=out \
             CC="ccache clang" HOSTCC="ccache clang" \
-            LD=ld.lld HOSTLD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy DEPMOD=depmod \
+            LD=ld.lld HOSTLD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy DEPMOD=depmod LLVM_IAS=1 \
             dtbs 2>&1 | tee -a build.log
 
           LAHAINA_COUNT=$(find out -name 'lahaina*.dtb' 2>/dev/null | wc -l)
@@ -311,7 +312,7 @@ jobs:
 
           make -j$(nproc --all) -s O=out \
             CC="ccache clang" HOSTCC="ccache clang" \
-            LD=ld.lld HOSTLD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy DEPMOD=depmod \
+            LD=ld.lld HOSTLD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy DEPMOD=depmod LLVM_IAS=1 \
             modules 2>&1 | tee -a build.log
           RC=${PIPESTATUS[0]}
 
