@@ -36,6 +36,9 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             bc bison build-essential ccache cpio curl flex \
             gcc git libelf-dev libssl-dev lz4 make \
+            binutils-aarch64-linux-gnu \
+            gcc-arm-linux-gnueabi \
+            binutils-arm-linux-gnueabi \
             python3 zip zstd
 
       - name: Set up workspace
@@ -168,26 +171,24 @@ jobs:
           cd "$GITHUB_WORKSPACE/kernel/msm-5.4"
           export PATH="$GITHUB_WORKSPACE/prebuilts-master/clang/host/linux-x86/clang-r416183b/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin:$PATH"
 
-          # These are the same env vars build.config.aarch64 / build.config.common
-          # export when build.sh sources the config chain. Without them, make
-          # doesn't know it's cross-compiling for arm64.
-          export ARCH=arm64
-          export CROSS_COMPILE=aarch64-linux-gnu-
-          export CLANG_TRIPLE=aarch64-linux-gnu-
-
-          TOOL_ARGS=(
-            CC="ccache clang"
-            HOSTCC="ccache clang"
-            LD=ld.lld
-            HOSTLD=ld.lld
-            NM=llvm-nm
-            OBJCOPY=llvm-objcopy
-            DEPMOD=depmod
+          # Match the reference workflow: all config-resolution make calls use
+          # one complete argument set so olddefconfig cannot fall back to host
+          # architecture/toolchain defaults.
+          KBUILD_ARGS=(
+            O=out
+            ARCH=arm64
+            CC=clang
+            CLANG_TRIPLE=aarch64-linux-gnu-
+            CROSS_COMPILE=aarch64-linux-gnu-
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
+            LLVM=1
             LLVM_IAS=1
           )
 
-          make O=out "${TOOL_ARGS[@]}" vendor/lahaina-qgki-debug_defconfig
-          make O=out "${TOOL_ARGS[@]}" olddefconfig
+          make "${KBUILD_ARGS[@]}" vendor/lahaina-qgki-debug_defconfig
+          make "${KBUILD_ARGS[@]}" olddefconfig
+          make "${KBUILD_ARGS[@]}" olddefconfig
+          touch out/.config
 
           echo "=== .config verification ==="
           echo "ARCH_LAHAINA: $(grep '^CONFIG_ARCH_LAHAINA=' out/.config || echo MISSING)"
@@ -270,17 +271,21 @@ jobs:
           set -euo pipefail
           cd "$GITHUB_WORKSPACE/kernel/msm-5.4"
           export PATH="$GITHUB_WORKSPACE/prebuilts-master/clang/host/linux-x86/clang-r416183b/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin:$PATH"
-          export ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu-
 
-          make -j$(nproc --all) -s O=out \
-            CC="ccache clang" HOSTCC="ccache clang" \
-            LD=ld.lld HOSTLD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy DEPMOD=depmod LLVM_IAS=1 \
+          make -j$(nproc --all) O=out \
+            ARCH=arm64 \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-android- \
+            CROSS_COMPILE_COMPAT=arm-linux-androideabi- \
+            LLVM=1 \
+            LLVM_IAS=1 \
             Image 2>&1 | tee build.log
           RC=${PIPESTATUS[0]}
 
           if [ "$RC" -ne 0 ] || [ ! -f out/arch/arm64/boot/Image ]; then
             echo "=== BUILD FAILED (exit $RC) ==="
-            grep -E "error:|undefined reference|ld.lld: error|Stop\." build.log | tail -40 || true
+            grep -E "error:|undefined reference|ld.lld: error|No such file or directory|Stop\." build.log | tail -80 || true
             exit 1
           fi
 
@@ -292,11 +297,14 @@ jobs:
           set -euo pipefail
           cd "$GITHUB_WORKSPACE/kernel/msm-5.4"
           export PATH="$GITHUB_WORKSPACE/prebuilts-master/clang/host/linux-x86/clang-r416183b/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin:$PATH"
-          export ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu-
 
-          make -j$(nproc --all) -s O=out \
-            CC="ccache clang" HOSTCC="ccache clang" \
-            LD=ld.lld HOSTLD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy DEPMOD=depmod LLVM_IAS=1 \
+          make -j$(nproc --all) O=out \
+            ARCH=arm64 \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-android- \
+            LLVM=1 \
+            LLVM_IAS=1 \
             dtbs 2>&1 | tee -a build.log
 
           LAHAINA_COUNT=$(find out -name 'lahaina*.dtb' 2>/dev/null | wc -l)
@@ -308,11 +316,15 @@ jobs:
           set -euo pipefail
           cd "$GITHUB_WORKSPACE/kernel/msm-5.4"
           export PATH="$GITHUB_WORKSPACE/prebuilts-master/clang/host/linux-x86/clang-r416183b/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin:$PATH"
-          export ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu-
 
-          make -j$(nproc --all) -s O=out \
-            CC="ccache clang" HOSTCC="ccache clang" \
-            LD=ld.lld HOSTLD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy DEPMOD=depmod LLVM_IAS=1 \
+          make -j$(nproc --all) O=out \
+            ARCH=arm64 \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-android- \
+            CROSS_COMPILE_COMPAT=arm-linux-androideabi- \
+            LLVM=1 \
+            LLVM_IAS=1 \
             modules 2>&1 | tee -a build.log
           RC=${PIPESTATUS[0]}
 
