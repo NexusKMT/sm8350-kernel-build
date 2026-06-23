@@ -138,50 +138,26 @@ jobs:
           max-size: 2G
 
       # =========================================================================
-      # Generate defconfig — uses the CLO's own fragment-merge system:
-      #   gki_defconfig + lahaina_GKI.config(allyes) + lahaina_QGKI.config
-      #   + lahaina_debug.config → vendor/lahaina-qgki-debug_defconfig
+      # Generate defconfig — calls CLO's own generate_defconfig.sh which
+      # merges: gki_defconfig + lahaina_GKI.config(allyes) + lahaina_QGKI.config
+      # + lahaina_debug.config → vendor/lahaina-qgki-debug_defconfig
       # =========================================================================
       - name: Generate defconfig from fragments
         run: |
           set -euo pipefail
-          cd "$GITHUB_WORKSPACE"
+          cd "$GITHUB_WORKSPACE/kernel/msm-5.4"
           export PATH="$GITHUB_WORKSPACE/prebuilts-master/clang/host/linux-x86/clang-r416183b/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin:$GITHUB_WORKSPACE/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin:$PATH"
-          KERNEL=kernel/msm-5.4
-
-          # Source the CLO envsetup to set up fragment paths
-          # TARGET_BUILD_VARIANT is normally set by Android build env;
-          # "userdebug" includes debugfs.config (non-user variant)
           export TARGET_BUILD_VARIANT=userdebug
-          source ${KERNEL}/scripts/gki/envsetup.sh lahaina
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export REAL_CC=clang
+          export HOSTCC=gcc
+          export HOSTLD=ld
+          export HOSTAR=ar
 
-          # Merge fragments: base + GKI(allyes) + QGKI + debug
-          # This is what generate_defconfig.sh does for qgki-debug variant
-          ALLYES_FRAG=${CONFIGS_DIR}/lahaina_ALLYES_GKI.config
-          ${KERNEL}/scripts/gki/fragment_allyesconfig.sh ${QCOM_GKI_FRAG} ${ALLYES_FRAG}
-
-          FINAL_BLEND="${BASE_DEFCONFIG} ${ALLYES_FRAG} ${QCOM_QGKI_FRAG} ${QCOM_DEBUG_FS_FRAG} ${QCOM_DEBUG_FRAG}"
-          # Reverse for correct override order (base first, debug last)
-          FINAL_BLEND=$(echo "$FINAL_BLEND" | awk '{ for (i=NF; i>1; i--) printf("%s ",$i); print $1 }')
-
-          echo "=== defconfig blend ==="
-          echo "$FINAL_BLEND"
-
-          ARCH=arm64 \
-          CROSS_COMPILE=aarch64-linux-gnu- \
-          ${KERNEL}/scripts/kconfig/merge_config.sh -m $FINAL_BLEND
-
-          make ARCH=arm64 \
-            CC="ccache clang" \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
-            LLVM=1 LLVM_IAS=1 \
-            savedefconfig
-
-          mv defconfig ${KERNEL}/arch/arm64/configs/vendor/lahaina-qgki-debug_defconfig
-          rm -f ${ALLYES_FRAG}
+          scripts/gki/generate_defconfig.sh vendor/lahaina-qgki-debug_defconfig
           echo "=== defconfig generated ==="
+          ls -la arch/arm64/configs/vendor/lahaina-qgki-debug_defconfig
 
       # =========================================================================
       # Apply defconfig and resolve dependencies — direct make, not build.sh
